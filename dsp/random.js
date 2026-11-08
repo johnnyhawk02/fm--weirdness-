@@ -234,12 +234,19 @@ function morphNode(a, b, x, key) {
   return x < 0.5 ? a : b;
 }
 
+// Pitch slew that you can hear: sometimes a snap, mostly a glide from 0.1 s to 4 s.
+export function randomSlew(rng) {
+  if (rng.next() < 0.15) return round4(rng.range(0.001, 0.03));
+  return round4(Math.exp(rng.range(Math.log(0.1), Math.log(4))));
+}
+
 // Randomise every part of the patch, ignoring section locks: voice, operators, steps (style, probability,
 // ratchets, locks), clocks, jump sets, gate row and random-walk modulators. Output level is left alone.
 export function randomizeEverything(patch, rng) {
   rndAll(patch, {}, 1, rng);
   patch.rnd.style = rng.int(FILL_STYLES.length);
   patch.rnd.lockDensity = round4(rng.range(0, 0.4));
+  patch.voice.pitchSlew = randomSlew(rng);
   patch.voice.pitchEnvSemis = round4(rng.next() < 0.5 ? rng.range(-24, 24) : rng.range(-4, 4));
   for (let i = 0; i < NUM_OPS; i++) {
     const op = patch.ops[i];

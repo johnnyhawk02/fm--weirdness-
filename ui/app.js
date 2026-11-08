@@ -5,7 +5,7 @@ import {
 } from '../dsp/params.js';
 import { SHAPES, shapeValue } from '../dsp/shapes.js';
 import { Rng, hashSeed } from '../dsp/rng.js';
-import { randomizePath, randomizeSection, fillSteps, rndLocks, rndAll, morphPatches, randomLockValue, randomizeEverything, alterEverything } from '../dsp/random.js';
+import { randomizePath, randomizeSection, fillSteps, rndLocks, rndAll, morphPatches, randomLockValue, randomizeEverything, alterEverything, randomSlew } from '../dsp/random.js';
 import { presetName } from './names.js';
 import { el, knob, selector, toggle, button, hiCanvas, toNorm, fromNorm, RATIO_STEPS } from './widgets.js';
 
@@ -699,13 +699,14 @@ snapT.addEventListener('pointerdown', () => { ui.pitchSnap = !ui.pitchSnap; snap
 button(ph, 'rnd', () => {
   pushUndo();
   const r = uiRng();
+  patch.voice.pitchSlew = randomSlew(r);
   for (const op of patch.ops) {
     if (r.next() >= patch.rnd.amount) continue;
     if (op.ratioMode === 'fixed') op.fixedHz = Math.round(Math.exp(r.range(Math.log(40), Math.log(4000))));
     else op.ratio = ui.pitchSnap ? RATIO_STEPS[r.int(RATIO_STEPS.length)] : Math.round(Math.exp(r.range(Math.log(0.5), Math.log(16))) * 1000) / 1000;
   }
   changed(true);
-}, 'randomise operator pitches (glides with slew)');
+}, 'randomise operator pitches and the slew time');
 const pHint = el('div', 'val', ph, 'drag a fader · the orange line is the gliding pitch · dbl-tap resets');
 pHint.style.color = C.mid; pHint.style.whiteSpace = 'normal';
 const faders = hiCanvas(pitchEl, 'faders');
