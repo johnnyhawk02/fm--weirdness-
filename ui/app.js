@@ -169,7 +169,8 @@ button(presetBar, '▸', () => stepPreset(1), 'next preset').classList.add('pnav
 const saveBtn = button(presetBar, 'SAVE', () => savePreset(), 'save this sound as a preset under the name shown');
 saveBtn.classList.add('savebtn');
 const saveState = el('div', 'savestate', brand, '');
-const loadEl = el('span', 'load', brand, '');
+const BUILD = '1108-1642'; // bump on each deploy so a stale cached page is easy to spot
+const loadEl = el('span', 'load', brand, 'build ' + BUILD);
 loadEl.title = 'audio engine load: above ~70% the sound may break up';
 ctx.register(() => {
   saveBtn.classList.toggle('dirty', ui.presetDirty);
@@ -1123,7 +1124,7 @@ function frame() {
     gateEls.forEach((g, k) => g.classList.toggle('cur', k === gi));
   } else gateEls.forEach((g) => g.classList.remove('cur'));
   const ld = ui.running ? Math.round((ui.load || 0) * 100) : -1;
-  if (ld !== ui.loadShown) { ui.loadShown = ld; loadEl.textContent = ld >= 0 ? `dsp ${ld}%` : ''; loadEl.classList.toggle('hot', ld >= 70); }
+  if (ld !== ui.loadShown) { ui.loadShown = ld; loadEl.textContent = ld >= 0 ? `dsp ${ld}%` : 'build ' + BUILD; loadEl.classList.toggle('hot', ld >= 70); }
   requestAnimationFrame(frame);
 }
 
