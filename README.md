@@ -17,6 +17,14 @@ with no DOM use, ready to port to C++/JUCE.
 - `worklet/processor.js`: AudioWorklet host, posts state about 60 times a second over the MessagePort
 - `ui/`: LCD interface
 
+## Presets and randomiser
+- RANDOMISE (top bar, or the R key) rolls everything not locked and gives the patch a new generated name.
+- Preset names are spliced from small chunks of words: ancient Greece, Chinese food, mountains,
+  English village names and astronomy (`ui/names.js`).
+- The name field in the top bar is editable; ctrl-s or SAVE stores the preset (same name overwrites).
+  The preset row has previous/next, new name, delete, export and import (JSON). Presets are kept in the
+  browser's local storage, so use export to back them up or move them. 12 factory presets ship on first run.
+
 ## Behaviour notes
 - Level destination: gain = (1 - amt) + amt x g, where g = depth x shape for positive steps,
   1 - |depth| x shape for negative steps (ducking), and 0 for empty or unfired steps.

@@ -6,6 +6,7 @@ import {
 import { SHAPES, shapeValue } from '../dsp/shapes.js';
 import { Rng, hashSeed } from '../dsp/rng.js';
 import { randomizePath, randomizeSection, fillSteps, rndLocks, rndAll, morphPatches, randomLockValue } from '../dsp/random.js';
+import { presetName } from './names.js';
 import { el, knob, selector, toggle, button, hiCanvas, toNorm, fromNorm } from './widgets.js';
 
 const C = { ink: '#17200e', spot: '#e0532a', dim: 'rgba(23,32,14,0.22)', faint: 'rgba(23,32,14,0.10)', bg: '#d1c7ac', mid: 'rgba(23,32,14,0.55)' };
@@ -28,6 +29,8 @@ const ui = {
   snaps: (!fresh && store.get('snaps')) || new Array(8).fill(null),
   snapA: 0, snapB: 1, morph: 0,
   running: false, state: null, selected: null,
+  presets: (!fresh && store.get('presets')) || null,
+  presetIdx: -1, presetName: (!fresh && store.get('presetName')) || '', presetDirty: false,
 };
 const undoStack = [], redoStack = [];
 const refreshers = [];
@@ -53,6 +56,7 @@ function redo() {
 function refreshAll() { for (const f of refreshers) f(); }
 function changed(refresh = true) {
   patchDirty = true;
+  ui.presetDirty = true;
   if (refresh) refreshAll();
 }
 function uiRng() { return new Rng(hashSeed(patch.seed, 'ui', ui.rndCount++)); }
@@ -136,9 +140,19 @@ function group(parent, title) {
 
 // --- top bar ---
 const brand = el('div', 'brand', top, 'FM/STEP');
-el('small', null, brand, 'one voice · four clocks');
+const nameBox = el('input', 'pname', brand);
+nameBox.spellcheck = false;
+nameBox.title = 'preset name (type to rename, enter to save)';
+nameBox.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { savePreset(); nameBox.blur(); } });
+nameBox.addEventListener('input', () => { ui.presetName = nameBox.value; ui.presetDirty = true; refreshAll(); });
+ctx.register(() => {
+  if (document.activeElement !== nameBox) nameBox.value = ui.presetName;
+  nameBox.classList.toggle('dirty', ui.presetDirty);
+});
 const startBtn = button(top, 'START', startStop, 'space');
 startBtn.id = 'start';
+const bigRnd = button(top, 'RANDOM-\nISE', () => rndEverything(true), 'roll everything not locked, with a new name (R)');
+bigRnd.id = 'bigrnd';
 ctx.register(() => { startBtn.textContent = ui.running ? 'STOP' : 'START'; startBtn.classList.toggle('spot', ui.running); });
 el('div', 'sep', top);
 
@@ -460,8 +474,9 @@ function rndSteps(i) {
   fillSteps(patch.ops[i], patch.rnd.style, uiRng(), patch.rnd.amount < 0.05 ? 0 : Math.max(patch.rnd.amount, 0.999 * (patch.rnd.amount >= 0.5)));
   changed(true);
 }
-function rndEverything() {
+function rndEverything(rename) {
   pushUndo();
+  if (rename !== false) { ui.presetName = presetName(uiRng()); ui.presetDirty = true; ui.presetIdx = -1; }
   if (!ui.seedLocked) patch.seed = (Math.random() * 4294967296) >>> 0;
   rndAll(patch, ui.locks, patch.rnd.amount, new Rng(hashSeed(patch.seed, 'rndall')));
   changed(true);
@@ -489,7 +504,7 @@ const rndP = el('div', 'panel', bottom);
 el('div', 'title', rndP, 'randomise');
 const rr1 = el('div', 'row', rndP);
 const rcol = el('div', 'col', rr1);
-const rall = button(rcol, 'RND ALL', () => rndEverything(), 'roll everything not locked');
+const rall = button(rcol, 'RND ALL', () => rndEverything(true), 'roll everything not locked');
 rall.style.height = '22px'; rall.style.lineHeight = '20px'; rall.style.fontWeight = '700';
 const lockRow = el('div', 'row', rcol); lockRow.style.gap = '2px';
 for (const sec of ['voice', 'seq', 'clocks', 'mods']) {
@@ -545,6 +560,21 @@ function applyMorph() {
   patch = morphPatches(a, b, ui.morph);
   patchDirty = true;
 }
+// presets
+const pr = el('div', 'row', snapP); pr.style.alignItems = 'center'; pr.style.gap = '2px';
+el('div', 'lbl', pr, 'preset');
+button(pr, '◂', () => stepPreset(-1), 'previous preset');
+button(pr, '▸', () => stepPreset(1), 'next preset');
+const pcount = el('div', 'val', pr, '');
+pcount.style.width = '40px'; pcount.style.textAlign = 'center';
+button(pr, 'save', () => savePreset(), 'save under the current name (overwrites a preset of the same name)');
+button(pr, 'name', () => { ui.presetName = presetName(uiRng()); ui.presetDirty = true; refreshAll(); }, 'generate a new name');
+button(pr, 'del', () => deletePreset(), 'delete the current preset');
+button(pr, 'export', () => exportPresets(), 'download all presets as JSON');
+button(pr, 'import', () => importPresets(), 'load presets from a JSON file');
+ctx.register(() => {
+  pcount.textContent = ui.presetIdx >= 0 ? `${ui.presetIdx + 1}/${ui.presets.length}` : `-/${ui.presets.length}`;
+});
 const gr = el('div', 'row', snapP); gr.style.alignItems = 'center';
 toggle(ctx, gr, { path: 'clock.gateOn', text: 'gate', title: 'retrigger notes from the gate row instead of every master wrap' });
 selector(ctx, gr, { path: 'clock.gateLen', labels: Array.from({ length: 16 }, (_, k) => `${k + 1}`), values: Array.from({ length: 16 }, (_, k) => k + 1), width: 24 });
@@ -560,6 +590,93 @@ const gateEls = Array.from({ length: MAX_STEPS }, (_, k) => {
   return g;
 });
 ctx.register(() => gateEls.forEach((g, k) => { g.classList.toggle('on', !!patch.clock.gate[k]); g.classList.toggle('off-len', k >= patch.clock.gateLen); }));
+
+// ---------------- presets ----------------
+function factoryPresets() {
+  const out = [];
+  const r = new Rng(hashSeed(2026, 'factory'));
+  out.push({ name: presetName(r), patch: defaultPatch() });
+  for (let k = 0; k < 11; k++) {
+    const p = defaultPatch();
+    p.seed = (r.next() * 4294967296) >>> 0;
+    rndAll(p, { mods: k % 3 === 0 }, 1, new Rng(hashSeed(p.seed, 'rndall')));
+    if (k % 2) for (const op of p.ops) { op.mutateK = 1 + (k % 3); op.mutateEvery = 2; }
+    out.push({ name: presetName(r), patch: p });
+  }
+  return out;
+}
+if (!Array.isArray(ui.presets) || !ui.presets.length) { ui.presets = factoryPresets(); store.set('presets', ui.presets); }
+if (!ui.presetName) { ui.presetIdx = 0; ui.presetName = ui.presets[0].name; patch = clonePatch(ui.presets[0].patch); }
+else ui.presetIdx = ui.presets.findIndex((q) => q.name === ui.presetName);
+
+function savePreset() {
+  const name = (ui.presetName || '').trim() || presetName(uiRng());
+  ui.presetName = name;
+  const at = ui.presets.findIndex((q) => q.name === name);
+  const entry = { name, patch: clonePatch(patch) };
+  if (at >= 0) { ui.presets[at] = entry; ui.presetIdx = at; } else { ui.presets.push(entry); ui.presetIdx = ui.presets.length - 1; }
+  ui.presetDirty = false;
+  store.set('presets', ui.presets); store.set('presetName', name);
+  flash('saved ' + name);
+  refreshAll();
+}
+function loadPreset(k) {
+  if (!ui.presets.length) return;
+  k = (k + ui.presets.length) % ui.presets.length;
+  pushUndo();
+  ui.presetIdx = k; ui.presetName = ui.presets[k].name; ui.presetDirty = false;
+  patch = clonePatch(ui.presets[k].patch);
+  store.set('presetName', ui.presetName);
+  changed(false);
+  ui.presetDirty = false;
+  refreshAll();
+}
+function stepPreset(d) { loadPreset(ui.presetIdx < 0 ? (d > 0 ? 0 : -1) : ui.presetIdx + d); }
+function deletePreset() {
+  const k = ui.presetIdx;
+  if (k < 0) return;
+  ui.presets.splice(k, 1);
+  store.set('presets', ui.presets);
+  ui.presetIdx = -1; ui.presetDirty = true;
+  flash('deleted');
+  refreshAll();
+}
+function exportPresets() {
+  const blob = new Blob([JSON.stringify({ format: 'fm-step-presets', version: 1, presets: ui.presets }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'fm-step-presets.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function importPresets() {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = async () => {
+    try {
+      const data = JSON.parse(await inp.files[0].text());
+      const list = Array.isArray(data) ? data : data.presets;
+      let n = 0;
+      for (const q of list || []) {
+        if (!q || typeof q.name !== 'string' || !q.patch || !Array.isArray(q.patch.ops)) continue;
+        const at = ui.presets.findIndex((x) => x.name === q.name);
+        if (at >= 0) ui.presets[at] = q; else ui.presets.push(q);
+        n++;
+      }
+      store.set('presets', ui.presets);
+      flash(`imported ${n}`);
+      refreshAll();
+    } catch { flash('import failed'); }
+  };
+  inp.click();
+}
+let flashTimer = 0;
+function flash(msg) {
+  const h = document.getElementById('hint');
+  if (!h._orig) h._orig = h.textContent;
+  h.textContent = msg; h.style.color = C.ink;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { h.textContent = h._orig; h.style.color = ''; }, 1600);
+}
 
 // ---------------- drawing ----------------
 function drawSaw(c, phase, live) {
@@ -690,6 +807,8 @@ function frame() {
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.code === 'Space') { e.preventDefault(); startStop(); }
+  else if (e.key === 'r' && !e.ctrlKey && !e.metaKey) rndEverything(true);
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); savePreset(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
 });
