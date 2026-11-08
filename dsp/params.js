@@ -16,14 +16,17 @@ export const ALGORITHMS = [
   { name: 'A B C D',       mods: [[], [], [], []],        carriers: [0, 1, 2, 3] },
 ];
 
-export const MULT_PRESETS = [1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 4, 1, 4 / 3, 3 / 2, 2, 3, 4, 6, 8];
-export const MULT_LABELS = ['1/4', '1/3', '1/2', '2/3', '3/4', '1', '4/3', '3/2', '2', '3', '4', '6', '8'];
+export const MULT_PRESETS = [1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 4, 1, 4 / 3, 3 / 2, 2, 3, 4, 6, 8, 12, 16, 32, 64];
+export const MULT_LABELS = ['1/16', '1/8', '1/4', '1/3', '1/2', '2/3', '3/4', '1', '4/3', '3/2', '2', '3', '4', '6', '8', '12', '16', '32', '64'];
+export const MULT_MIN = 1 / 64, MULT_MAX = 64;
+export const LFO_SHAPES = ['walk', 'sine', 'tri', 'saw', 'square'];
 export const DIRECTIONS = ['fwd', 'rev', 'pend', 'walk'];
 export const DESTS = ['level', 'ratio', 'pitch'];
 export const FILL_STYLES = ['uniform', 'drunk', 'sparse', 'cluster', 'euclid'];
 export const LOCK_KEYS = ['ratio', 'decay', 'feedback', 'shape'];
 export const MOD_TARGETS = [
-  'off', 'pitch', 'feedback', 'algorithm', 'pan',
+  'off', 'pitch', 'feedback', 'algorithm', 'pan', 'clock',
+  'A.rate', 'B.rate', 'C.rate', 'D.rate',
   'A.level', 'B.level', 'C.level', 'D.level',
   'A.ratio', 'B.ratio', 'C.ratio', 'D.ratio',
   'A.decay', 'B.decay', 'C.decay', 'D.decay',
@@ -62,7 +65,7 @@ function makeOp(i) {
     mutateEvery: 2, mutateK: 0,
     // clock
     mult: mults[i], sync: true, syncEvery: 4, drift: 0, jitter: 0, scatter: 0,
-    direction: 0, jumpChance: 0, jumpSet: [5, 8, 9, 10],
+    direction: 0, jumpChance: 0, jumpSet: [7, 10, 11, 12],
   };
 }
 
@@ -81,10 +84,10 @@ export function defaultPatch() {
     ops: [0, 1, 2, 3].map(makeOp),
     rnd: { algoChance: 0, amount: 0.5, style: 0, lockDensity: 0.25 },
     mods: [
-      { on: true, target: 'algorithm', depth: 0.3, rate: 0.125, smooth: 0 },
-      { on: true, target: 'feedback', depth: 0.3, rate: 0.5, smooth: 0.8 },
-      { on: true, target: 'pitch', depth: 0.04, rate: 0.3, smooth: 0.9 },
-      { on: false, target: 'A.ratio', depth: 0.2, rate: 0.15, smooth: 0.7 },
+      { on: true, target: 'algorithm', depth: 0.3, rate: 0.125, smooth: 0, shape: 0 },
+      { on: true, target: 'feedback', depth: 0.3, rate: 0.5, smooth: 0.8, shape: 0 },
+      { on: true, target: 'pitch', depth: 0.04, rate: 0.3, smooth: 0.9, shape: 0 },
+      { on: false, target: 'B.rate', depth: 0.3, rate: 0.1, smooth: 0, shape: 1 },
     ],
   };
   // a musical starting pattern
@@ -125,7 +128,7 @@ for (let i = 0; i < 4; i++) {
     { path: o + 'length', section: 'seq', type: 'int', min: 1, max: 16, def: 16, rndMin: 3 },
     { path: o + 'mutateEvery', section: 'seq', type: 'int', min: 1, max: 16, def: 2 },
     { path: o + 'mutateK', section: 'seq', type: 'int', min: 0, max: 8, def: 0, rndMax: 3 },
-    { path: o + 'mult', section: 'clocks', type: 'mult', min: 0.01, max: 16, def: 1 },
+    { path: o + 'mult', section: 'clocks', type: 'mult', min: 1 / 64, max: 64, def: 1 },
     { path: o + 'sync', section: 'clocks', type: 'bool', def: true, rndBias: 0.7 },
     { path: o + 'syncEvery', section: 'clocks', type: 'int', min: 1, max: 16, def: 1, rndMax: 4 },
     { path: o + 'drift', section: 'clocks', type: 'lin', min: 0, max: 0.05, def: 0 },
@@ -145,15 +148,16 @@ export const PARAM_SPECS = [
   { path: 'voice.pan', section: 'voice', type: 'lin', min: -1, max: 1, def: 0, rndScale: 0.5 },
   { path: 'voice.algorithm', section: 'voice', type: 'choice', n: 8, def: 0 },
   { path: 'voice.feedback', section: 'voice', type: 'lin', min: -1, max: 1, def: 0 },
-  { path: 'clock.bpm', section: 'clocks', type: 'int', min: 40, max: 240, def: 120, rndMin: 70, rndMax: 180 },
+  { path: 'clock.bpm', section: 'clocks', type: 'int', min: 10, max: 999, def: 120, rndMin: 70, rndMax: 180 },
   { path: 'clock.beats', section: 'clocks', type: 'int', min: 1, max: 16, def: 4, rndMax: 8 },
-  { path: 'clock.hz', section: 'clocks', type: 'log', min: 0.05, max: 20, def: 0.5, rndMax: 4 },
+  { path: 'clock.hz', section: 'clocks', type: 'log', min: 0.01, max: 50, def: 0.5, rndMax: 4 },
   { path: 'rnd.algoChance', section: 'clocks', type: 'lin', min: 0, max: 1, def: 0, rndMax: 0.3 },
   ...opSpecs,
 ];
 for (let m = 0; m < 4; m++) {
   PARAM_SPECS.push(
-    { path: `mods.${m}.rate`, section: 'mods', type: 'log', min: 0.02, max: 8, def: 0.3, rndMax: 2 },
+    { path: `mods.${m}.rate`, section: 'mods', type: 'log', min: 0.01, max: 20, def: 0.3, rndMax: 2 },
+    { path: `mods.${m}.shape`, section: 'mods', type: 'choice', n: 5, def: 0 },
     { path: `mods.${m}.smooth`, section: 'mods', type: 'lin', min: 0, max: 1, def: 0.5 },
     { path: `mods.${m}.depth`, section: 'mods', type: 'lin', min: -1, max: 1, def: 0, rndScale: 0.6 },
   );

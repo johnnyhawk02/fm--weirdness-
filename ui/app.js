@@ -1,7 +1,7 @@
 // UI shell: builds the LCD panel, keeps the patch, undo/redo, snapshots, and drives the worklet.
 import {
   defaultPatch, clonePatch, getPath, setPath, SPEC_BY_PATH, ALGORITHMS, OP_NAMES, MULT_PRESETS, MULT_LABELS,
-  DIRECTIONS, DESTS, FILL_STYLES, LOCK_KEYS, MOD_TARGETS, MAX_STEPS, multLabel, masterRateHz,
+  DIRECTIONS, DESTS, FILL_STYLES, LOCK_KEYS, MOD_TARGETS, MAX_STEPS, multLabel, masterRateHz, LFO_SHAPES, MULT_MIN, MULT_MAX,
 } from '../dsp/params.js';
 import { SHAPES, shapeValue } from '../dsp/shapes.js';
 import { Rng, hashSeed } from '../dsp/rng.js';
@@ -21,6 +21,8 @@ const store = {
 };
 const fresh = new URLSearchParams(location.search).has('fresh');
 let patch = (!fresh && store.get('patch')) || defaultPatch();
+function upgrade(p) { for (const m of p.mods) if (m.shape == null) m.shape = 0; return p; }
+upgrade(patch);
 const ui = {
   seedLocked: false,
   locks: { voice: false, seq: false, clocks: false, mods: false },
@@ -227,6 +229,7 @@ for (let i = 0; i < 4; i++) buildOp(i);
 function buildOp(i) {
   const o = `ops.${i}.`;
   const row = el('div', 'op', opsEl);
+  row.dataset.pane = OP_NAMES[i];
   // head
   const head = el('div', 'head', row);
   el('div', 'letter', head, OP_NAMES[i]);
@@ -288,6 +291,7 @@ function buildOp(i) {
   const scol = el('div', 'col', r1);
   el('div', 'lbl', scol, 'sync');
   toggle(ctx, scol, { path: o + 'sync', text: 'sync' });
+  knob(ctx, r1, { path: o + 'mult', label: 'rate', fmt: (v) => multLabel(v) });
   const sawc = el('div', 'col', r1);
   const sawLbl = el('div', 'lbl', sawc, 'slave saw');
   const saw = hiCanvas(sawc, 'saw');
@@ -354,7 +358,7 @@ function multSelector(parent, i) {
   });
   box.addEventListener('contextmenu', (e) => e.preventDefault());
   box.addEventListener('wheel', (e) => { e.preventDefault(); stepBy(e.deltaY > 0 ? -1 : 1); }, { passive: false });
-  box.title = 'click/right-click: presets · double-click: free value (0.01-16)';
+  box.title = 'click/right-click: presets · double-click: free value (1/64-64)';
   box.addEventListener('dblclick', () => {
     const inp = el('input', 'num', null);
     inp.value = String(+patch.ops[i].mult.toFixed(4));
@@ -364,7 +368,7 @@ function multSelector(parent, i) {
     const done = (ok) => {
       if (ok) {
         const v = parseFloat(inp.value);
-        if (Number.isFinite(v)) { pushUndo(); patch.ops[i].mult = Math.min(16, Math.max(0.01, v)); }
+        if (Number.isFinite(v)) { pushUndo(); patch.ops[i].mult = Math.min(MULT_MAX, Math.max(MULT_MIN, v)); }
       }
       inp.replaceWith(box);
       changed(true);
@@ -492,14 +496,16 @@ function rndEverything(rename) {
 
 // --- bottom panels ---
 const modsP = el('div', 'panel', bottom);
-el('div', 'title', modsP, 'random walk');
+modsP.dataset.pane = 'lfo';
+el('div', 'title', modsP, 'lfo / random walk');
 const modsRow = el('div', 'mods', modsP);
 const modBars = [];
 for (let m = 0; m < 4; m++) {
   const mc = el('div', 'mod', modsRow);
   const hr = el('div', 'row', mc); hr.style.gap = '2px';
   toggle(ctx, hr, { path: `mods.${m}.on`, text: String(m + 1) });
-  selector(ctx, hr, { path: `mods.${m}.target`, labels: MOD_TARGETS, values: MOD_TARGETS, width: 80 });
+  selector(ctx, hr, { path: `mods.${m}.target`, labels: MOD_TARGETS, values: MOD_TARGETS, width: 76 });
+  selector(ctx, hr, { path: `mods.${m}.shape`, labels: LFO_SHAPES, width: 40 });
   const kr = el('div', 'row', mc); kr.style.gap = '2px';
   knob(ctx, kr, { path: `mods.${m}.rate`, label: 'rate', fmt: (v) => v.toFixed(2) });
   knob(ctx, kr, { path: `mods.${m}.smooth`, label: 'smooth' });
@@ -509,6 +515,7 @@ for (let m = 0; m < 4; m++) {
 }
 
 const rndP = el('div', 'panel', bottom);
+rndP.dataset.pane = 'rnd';
 el('div', 'title', rndP, 'randomise');
 const rr1 = el('div', 'row', rndP);
 const rcol = el('div', 'col', rr1);
@@ -540,6 +547,7 @@ knob(ctx, rk, { path: 'rnd.algoChance', label: 'algo%', fmt: pct });
 knob(ctx, rk, { path: 'rnd.lockDensity', label: 'lock%', spec: { type: 'lin', min: 0, max: 1, def: 0.25 }, fmt: pct });
 
 const snapP = el('div', 'panel', bottom);
+snapP.dataset.pane = 'rnd';
 snapP.style.flex = '1';
 el('div', 'title', snapP, 'snapshots · note gate');
 const sr1 = el('div', 'row', snapP); sr1.style.alignItems = 'center';
@@ -599,6 +607,27 @@ const gateEls = Array.from({ length: MAX_STEPS }, (_, k) => {
 });
 ctx.register(() => gateEls.forEach((g, k) => { g.classList.toggle('on', !!patch.clock.gate[k]); g.classList.toggle('off-len', k >= patch.clock.gateLen); }));
 
+// ---------------- phone tabs ----------------
+for (const g of [voiceG, algoG, outG]) g.parentElement.dataset.pane = 'voice';
+const tabsEl = document.getElementById('tabs');
+const TABS = [['A', 'A'], ['B', 'B'], ['C', 'C'], ['D', 'D'], ['voice', 'VOICE'], ['lfo', 'LFO'], ['rnd', 'RND']];
+ui.tab = store.get('tab') || 'A';
+const tabEls = TABS.map(([id, text]) => {
+  const b = button(tabsEl, text, () => setTab(id));
+  b.dataset.tab = id;
+  return b;
+});
+function setTab(id) {
+  ui.tab = id;
+  store.set('tab', id);
+  document.querySelectorAll('[data-pane]').forEach((n) => n.classList.toggle('pane-off', n.dataset.pane !== id));
+  const isOp = OP_NAMES.includes(id);
+  opsEl.classList.toggle('pane-off', !isOp);
+  bottom.classList.toggle('pane-off', isOp || id === 'voice');
+  tabEls.forEach((b) => b.classList.toggle('sel', b.dataset.tab === id));
+}
+setTab(ui.tab);
+
 // ---------------- presets ----------------
 function factoryPresets() {
   const out = [];
@@ -633,7 +662,7 @@ function loadPreset(k) {
   k = (k + ui.presets.length) % ui.presets.length;
   pushUndo();
   ui.presetIdx = k; ui.presetName = ui.presets[k].name; ui.presetDirty = false;
-  patch = clonePatch(ui.presets[k].patch);
+  patch = upgrade(clonePatch(ui.presets[k].patch));
   store.set('presetName', ui.presetName);
   changed(false);
   ui.presetDirty = false;

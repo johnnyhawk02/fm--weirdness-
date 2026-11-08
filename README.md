@@ -20,7 +20,13 @@ with no DOM use, ready to port to C++/JUCE.
 ## Presets and randomiser
 - RANDOMISE (top bar, or the R key) randomises everything, ignoring section locks: voice, operators, steps, locks,
   clocks, jump sets, gate row and modulators, and gives the patch a new generated name. RND ALL respects the locks.
-- On phones (under 760px wide, e.g. Pixel 9a) the panel stacks into one scrolling column.
+- On phones (under 760px wide, e.g. Pixel 9a portrait) everything fits one screen with no scrolling: tabs A B C D
+  (one operator each), VOICE, LFO and RND. The top bar (start, randomise, name, master saw) is always visible.
+- Sequencer speed: master 10-999 bpm or 0.01-50 Hz, with 1-16 beats per cycle; each operator's rate
+  (multiplier) runs from 1/64 to 64 (presets 1/16 to 64, or the rate knob for anything in between).
+- LFOs: each of the four modulators is a sine, triangle, saw, square or smooth random walk. Targets include
+  `clock` (master rate) and `A.rate`..`D.rate` (each sequencer's saw rate, +-3 octaves at depth 1).
+  Synced saws stay locked to the master while their rate is modulated.
 - Preset names are spliced from small chunks of words: ancient Greece, Chinese food, mountains,
   English village names and astronomy (`ui/names.js`).
 - The name field in the top bar is editable; ctrl-s or SAVE stores the preset (same name overwrites).

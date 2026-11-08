@@ -6,6 +6,8 @@ import { Voice } from './voice.js';
 import { OpSequencer, mutateSteps } from './sequencer.js';
 import { MULT_PRESETS, MOD_TARGETS, noteToHz, masterRateHz } from './params.js';
 
+const TWO_PI = Math.PI * 2;
+
 const CTRL = 32;                 // control-rate interval in samples
 const LN_MINUS_60DB = Math.log(0.001);
 const RETRIGGER_FADE = 64;       // samples
@@ -49,6 +51,9 @@ export class Engine {
     this.modVal = new Float64Array(4);
     this.modTarget = new Float64Array(4);
     this.modTimer = new Float64Array(4);
+    this.modPhase = new Float64Array(4);
+    this.effMult = new Float64Array(4);   // multiplier after LFO rate modulation
+    this.rateMod = new Float64Array(4);
     this.dirtyOps = [false, false, false, false];
     this.dirtyVoice = false;
     this.onWrap = null;        // (op, sampleIndex, subSampleOffset, isReset)
@@ -64,11 +69,6 @@ export class Engine {
     if (old && this.cycle >= 0) {
       for (let i = 0; i < 4; i++) {
         const o = old.ops[i], n = p.ops[i];
-        if (n.sync && o.sync && n.mult !== o.mult) {
-          const sp = this._slavePos(i, o);
-          this.sBaseOff[i] = sp;
-          this.sBasePos[i] = (this.cycle - this.sResetCycle[i]) + this.mPhase;
-        }
         if (n.sync && !o.sync) { // joining sync: line up at the current master position
           const pos = (this.cycle - this.sResetCycle[i]) + this.mPhase;
           this.sBaseOff[i] = this.sPhase[i] + this.sK[i];
@@ -99,7 +99,8 @@ export class Engine {
       this.seqs[i].reset(this.patch.ops[i]);
       this.sPhase[i] = 0; this.sK[i] = 0; this.sBaseOff[i] = 0; this.sBasePos[i] = 0;
       this.sResetCycle[i] = 0; this.drift[i] = 0; this.driftTarget[i] = 0; this.sValue[i] = 0;
-      this.modVal[i] = 0; this.modTarget[i] = 0; this.modTimer[i] = 0;
+      this.modVal[i] = 0; this.modTarget[i] = 0; this.modTimer[i] = 0; this.modPhase[i] = 0;
+      this.effMult[i] = this.patch.ops[i].mult; this.rateMod[i] = 0;
     }
     this.voice = new Voice(this.sr);
     this.tail = new Voice(this.sr);
@@ -123,22 +124,35 @@ export class Engine {
   _control() {
     const p = this.patch, v = p.voice, sr = this.sr;
     const dt = CTRL / sr;
-    this.mInc = masterRateHz(p.clock) / sr;
 
     // random-walk modulators
-    let mPitch = 0, mFb = 0, mAlgo = 0, mPan = 0;
-    const mLevel = [0, 0, 0, 0], mRatio = [0, 0, 0, 0], mDecay = [0, 0, 0, 0], mSeq = [0, 0, 0, 0];
+    let mPitch = 0, mFb = 0, mAlgo = 0, mPan = 0, mClock = 0;
+    const mLevel = [0, 0, 0, 0], mRatio = [0, 0, 0, 0], mDecay = [0, 0, 0, 0], mSeq = [0, 0, 0, 0], mRate = [0, 0, 0, 0];
     for (let m = 0; m < 4; m++) {
       const md = p.mods[m];
-      this.modTimer[m] -= dt;
-      if (this.modTimer[m] <= 0) {
-        this.modTimer[m] += 1 / Math.max(0.01, md.rate);
-        // drunk walk target, kept inside -1..1
-        this.modTarget[m] = clamp(this.modTarget[m] + this.rngMod.bipolar() * 0.9, -1, 1);
+      const rate = Math.max(0.005, md.rate);
+      const shape = md.shape | 0;
+      let raw;
+      if (shape === 0) { // smooth random walk
+        this.modTimer[m] -= dt;
+        if (this.modTimer[m] <= 0) {
+          this.modTimer[m] += 1 / rate;
+          this.modTarget[m] = clamp(this.modTarget[m] + this.rngMod.bipolar() * 0.9, -1, 1);
+        }
+        raw = this.modTarget[m];
+      } else { // periodic LFO
+        let ph = this.modPhase[m] + rate * dt;
+        ph -= Math.floor(ph);
+        this.modPhase[m] = ph;
+        if (shape === 1) raw = Math.sin(TWO_PI * ph);
+        else if (shape === 2) raw = ph < 0.5 ? 4 * ph - 1 : 3 - 4 * ph;
+        else if (shape === 3) raw = 2 * ph - 1;
+        else raw = ph < 0.5 ? 1 : -1;
       }
-      const tau = md.smooth / Math.max(0.01, md.rate) * 0.5;
+      // smooth: slew time as a fraction of one period
+      const tau = md.smooth / rate * (shape === 0 ? 0.5 : 0.15);
       const k = tau <= 0 ? 1 : 1 - Math.exp(-dt / tau);
-      this.modVal[m] += (this.modTarget[m] - this.modVal[m]) * k;
+      this.modVal[m] += (raw - this.modVal[m]) * k;
       if (!md.on || md.target === 'off') continue;
       const x = this.modVal[m] * md.depth;
       const t = md.target;
@@ -146,12 +160,29 @@ export class Engine {
       else if (t === 'feedback') mFb += x;
       else if (t === 'algorithm') mAlgo += x;
       else if (t === 'pan') mPan += x;
+      else if (t === 'clock') mClock += x;
       else {
         const oi = t.charCodeAt(0) - 65, key = t.slice(2);
         if (key === 'level') mLevel[oi] += x;
         else if (key === 'ratio') mRatio[oi] += x;
         else if (key === 'decay') mDecay[oi] += x;
         else if (key === 'seqAmount') mSeq[oi] += x;
+        else if (key === 'rate') mRate[oi] += x;
+      }
+    }
+
+    // master rate: depth 1 = +-3 octaves
+    this.mInc = masterRateHz(p.clock) * Math.pow(2, mClock * 3) / sr;
+
+    // per-operator sequencer rate: depth 1 = +-3 octaves. Synced saws are rebased so the
+    // phase stays continuous while the rate moves.
+    for (let i = 0; i < 4; i++) {
+      const op = p.ops[i];
+      this.rateMod[i] = mRate[i];
+      const em = Math.min(256, Math.max(1 / 256, op.mult * (mRate[i] !== 0 ? Math.pow(2, mRate[i] * 3) : 1)));
+      if (em !== this.effMult[i]) {
+        if (op.sync && this.cycle >= 0) this._rebase(i);
+        this.effMult[i] = em;
       }
     }
 
@@ -202,9 +233,15 @@ export class Engine {
     if (this.onTrigger) this.onTrigger(this.sample);
   }
 
-  _slavePos(i, op) {
+  _slavePos(i) {
     const pos = (this.cycle - this.sResetCycle[i]) + this.mPhase;
-    return this.sBaseOff[i] + (pos - this.sBasePos[i]) * op.mult;
+    return this.sBaseOff[i] + (pos - this.sBasePos[i]) * this.effMult[i];
+  }
+
+  // keep the synced saw's current position, so a new multiplier continues from here
+  _rebase(i) {
+    this.sBaseOff[i] = this._slavePos(i);
+    this.sBasePos[i] = (this.cycle - this.sResetCycle[i]) + this.mPhase;
   }
 
   _onMasterWrap(offset) {
@@ -230,12 +267,9 @@ export class Engine {
       if (op.jumpChance > 0 && rj < op.jumpChance && op.jumpSet.length) {
         const nm = MULT_PRESETS[op.jumpSet[Math.floor(rs * op.jumpSet.length)]];
         if (nm !== op.mult) {
-          if (op.sync) { // rebase so the phase stays continuous
-            const sp = this._slavePos(i, op);
-            this.sBaseOff[i] = sp;
-            this.sBasePos[i] = (this.cycle - this.sResetCycle[i]) + this.mPhase;
-          }
+          if (op.sync) this._rebase(i); // phase stays continuous
           op.mult = nm;
+          this.effMult[i] = Math.min(256, Math.max(1 / 256, nm * (this.rateMod[i] !== 0 ? Math.pow(2, this.rateMod[i] * 3) : 1)));
           this.dirtyOps[i] = true;
         }
       }
@@ -283,12 +317,12 @@ export class Engine {
             this.sBaseOff[i] = op.scatter > 0 ? this.rngClock.next() * op.scatter : 0;
             isReset = true; wrapped = true; off = mOff;
           }
-          const sp = this._slavePos(i, op);
+          const sp = this._slavePos(i);
           const k = Math.floor(sp);
           const ph = sp - k;
           if (!isReset && k !== this.sK[i]) {
             wrapped = true;
-            off = ph / (this.mInc * op.mult);
+            off = ph / (this.mInc * this.effMult[i]);
           }
           this.sK[i] = k;
           this.sPhase[i] = ph;
@@ -296,7 +330,7 @@ export class Engine {
           if (masterWrapped && !seqs[i].started) {
             this.sPhase[i] = 0; isReset = true; wrapped = true;
           } else {
-            const inc = this.mInc * op.mult * (1 + op.drift * this.drift[i]);
+            const inc = this.mInc * this.effMult[i] * (1 + op.drift * this.drift[i]);
             let ph = this.sPhase[i] + inc;
             if (ph >= 1) {
               ph -= Math.floor(ph);
@@ -381,7 +415,7 @@ export class Engine {
       arr[b] = this.sPhase[i];
       arr[b + 1] = this.seqs[i].pos;
       arr[b + 2] = this.seqs[i].fired ? 1 : 0;
-      arr[b + 3] = this.patch.ops[i].mult;
+      arr[b + 3] = this.effMult[i];
       arr[b + 4] = this.sValue[i];
     }
     for (let m = 0; m < 4; m++) arr[23 + m] = this.modVal[m];

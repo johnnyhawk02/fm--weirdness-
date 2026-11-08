@@ -103,3 +103,20 @@ test('sub-sample wrap offsets are reported and lie inside one sample', () => {
   for (const o of offs) assert.ok(o >= 0 && o < 1.0000001, `offset ${o}`);
   assert.ok(offs.some((o) => o > 0.01), 'offsets carry fractional position');
 });
+
+test('sequencer rate spans very slow to very fast, and an LFO on rate keeps synced wraps aligned', () => {
+  // very fast: x64 at 999 bpm, 1 beat per cycle
+  const fast = runClocks((p) => { p.clock.bpm = 999; p.clock.beats = 1; p.ops.forEach((o) => { o.mult = 64; o.sync = true; }); }, 0.3);
+  // 0.3 cycles of the 137 bpm reference length = 0.525 s; 999 bpm x64 = ~1065 steps per second
+  assert.ok(fast.wraps[0].length > 540, `fast: ${fast.wraps[0].length} wraps`);
+  // LFO sine on A.rate and on the master clock: wraps still land on every master wrap (sync on)
+  const mod = runClocks((p) => {
+    p.mods[0] = { on: true, target: 'A.rate', depth: 0.8, rate: 0.7, smooth: 0, shape: 1 };
+    p.mods[1] = { on: true, target: 'clock', depth: 0.5, rate: 0.3, smooth: 0, shape: 2 };
+    p.ops.forEach((o, i) => { o.mult = [2, 2, 3, 4][i]; o.sync = true; });
+  }, 10);
+  for (const ms of mod.master) assert.ok(mod.wraps[0].some((w) => w.s === ms));
+  const counts = new Set();
+  for (let c = 0; c < mod.master.length - 1; c++) counts.add(mod.wraps[0].filter((w) => w.cycle === c).length);
+  assert.ok(counts.size > 1, 'LFO on A.rate changes how many steps fit in a cycle');
+});
