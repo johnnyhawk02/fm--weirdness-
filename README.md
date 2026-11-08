@@ -24,6 +24,9 @@ with no DOM use, ready to port to C++/JUCE.
   (one operator each), VOICE, LFO and RND. The top bar (start, randomise, name, master saw) is always visible.
 - Sequencer speed: master 10-999 bpm or 0.01-50 Hz, with 1-16 beats per cycle; each operator's rate
   (multiplier) runs from 1/64 to 64 (presets 1/16 to 64, or the rate knob for anything in between).
+- Amp source per operator (the "amp" box under the operator letter): env = note envelope, hold = steady level,
+  lfo1-4 = level follows that LFO. Operator A defaults to hold, so the carrier sounds steadily and you hear the
+  modulators' sequencers change the timbre.
 - LFOs: each of the four modulators is a sine, triangle, saw, square or smooth random walk. Targets include
   `clock` (master rate) and `A.rate`..`D.rate` (each sequencer's saw rate, +-3 octaves at depth 1).
   Synced saws stay locked to the master while their rate is modulated.

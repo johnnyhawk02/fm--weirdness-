@@ -375,6 +375,8 @@ export class Engine {
           const oct = op.destRange * 2; // ratio: +-2 octaves, pitch: +-24 semitones at range 1
           fmul = Math.pow(2, a * m * oct);
         }
+        const amp = op.amp | 0;
+        if (amp >= 2) gain *= 0.5 * (1 + this.modVal[amp - 2]); // level follows an LFO
         this.gain[i] = gain;
         let base;
         if (op.ratioMode === 'fixed') base = op.fixedHz * (op.dest === 2 ? fmul : 1);
@@ -387,7 +389,10 @@ export class Engine {
       }
       const dc = this.decCoef;
       const saved0 = dc[0], saved1 = dc[1], saved2 = dc[2], saved3 = dc[3];
-      for (let i = 0; i < 4; i++) if (this.lockDecCoef[i] > 0) dc[i] = this.lockDecCoef[i];
+      for (let i = 0; i < 4; i++) {
+        if ((ops[i].amp | 0) !== 0) dc[i] = 1;              // hold / LFO: no envelope decay
+        else if (this.lockDecCoef[i] > 0) dc[i] = this.lockDecCoef[i];
+      }
 
       let out = this.voice.render(this.freq, this.gain, this.attInc, dc, fb, this.pitchSemis, this.pitchCoef);
       if (this.fadePos < this.fadeLen) {

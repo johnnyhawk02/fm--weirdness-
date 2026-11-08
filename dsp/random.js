@@ -256,6 +256,7 @@ export function randomizeEverything(patch, rng) {
   const alg = patch.voice.algorithm;
   const carriers = [[0], [0], [0, 2], [0], [0, 1, 2], [0], [0, 1, 2], [0, 1, 2, 3]][alg];
   for (const c of carriers) patch.ops[c].level = Math.max(patch.ops[c].level, 0.45);
+  if (rng.next() < 0.5) patch.ops[carriers[0]].amp = 1; // often a steady carrier, so modulation is audible
   patch.ops[carriers[0]].seqAmount = Math.max(0.5, patch.ops[carriers[0]].seqAmount);
   const targets = MOD_TARGETS_LOCAL;
   for (const m of patch.mods) {

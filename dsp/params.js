@@ -19,6 +19,7 @@ export const ALGORITHMS = [
 export const MULT_PRESETS = [1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 4, 1, 4 / 3, 3 / 2, 2, 3, 4, 6, 8, 12, 16, 32, 64];
 export const MULT_LABELS = ['1/16', '1/8', '1/4', '1/3', '1/2', '2/3', '3/4', '1', '4/3', '3/2', '2', '3', '4', '6', '8', '12', '16', '32', '64'];
 export const MULT_MIN = 1 / 64, MULT_MAX = 64;
+export const AMP_SOURCES = ['env', 'hold', 'lfo1', 'lfo2', 'lfo3', 'lfo4'];
 export const LFO_SHAPES = ['walk', 'sine', 'tri', 'saw', 'square'];
 export const DIRECTIONS = ['fwd', 'rev', 'pend', 'walk'];
 export const DESTS = ['level', 'ratio', 'pitch'];
@@ -59,9 +60,11 @@ function makeOp(i) {
   return {
     // FM
     ratioMode: 'ratio', ratio: ratios[i], fine: 0, fixedHz: 440,
-    level: levels[i], attack: 0.002, decay: [3, 0.8, 2.5, 2][i],
+    level: levels[i], attack: 0.002,
+    decay: [3, 0.8, 2.5, 2][i],
+    amp: i === 0 ? 1 : 0, // amp source: 0 note envelope, 1 hold (steady), 2-5 LFO 1-4
     // sequencer
-    length: [8, 16, 12, 6][i], steps, seqAmount: 1, dest: 0, destRange: 0.5,
+    length: [8, 16, 12, 6][i], steps, seqAmount: i === 0 ? 0.3 : 1, dest: 0, destRange: 0.5,
     mutateEvery: 2, mutateK: 0,
     // clock
     mult: mults[i], sync: true, syncEvery: 4, drift: 0, jitter: 0, scatter: 0,
@@ -122,6 +125,7 @@ for (let i = 0; i < 4; i++) {
     { path: o + 'attack', section: 'voice', type: 'log', min: 0.0005, max: 1, def: 0.002, rndMax: 0.15 },
     { path: o + 'decay', section: 'voice', type: 'log', min: 0.01, max: 8, def: 0.5 },
     { path: o + 'fixedHz', section: 'voice', type: 'log', min: 20, max: 8000, def: 440 },
+    { path: o + 'amp', section: 'voice', type: 'choice', n: 6, def: 0, rndWeights: [6, 2, 1, 1, 1, 1] },
     { path: o + 'seqAmount', section: 'seq', type: 'lin', min: 0, max: 1, def: 1 },
     { path: o + 'dest', section: 'seq', type: 'choice', n: 3, def: 0, rndWeights: [6, 2, 2] },
     { path: o + 'destRange', section: 'seq', type: 'lin', min: 0, max: 1, def: 0.5 },

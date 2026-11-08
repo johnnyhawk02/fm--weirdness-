@@ -1,7 +1,7 @@
 // UI shell: builds the LCD panel, keeps the patch, undo/redo, snapshots, and drives the worklet.
 import {
   defaultPatch, clonePatch, getPath, setPath, SPEC_BY_PATH, ALGORITHMS, OP_NAMES, MULT_PRESETS, MULT_LABELS,
-  DIRECTIONS, DESTS, FILL_STYLES, LOCK_KEYS, MOD_TARGETS, MAX_STEPS, multLabel, masterRateHz, LFO_SHAPES, MULT_MIN, MULT_MAX,
+  DIRECTIONS, DESTS, FILL_STYLES, LOCK_KEYS, MOD_TARGETS, MAX_STEPS, multLabel, masterRateHz, LFO_SHAPES, MULT_MIN, MULT_MAX, AMP_SOURCES,
 } from '../dsp/params.js';
 import { SHAPES, shapeValue } from '../dsp/shapes.js';
 import { Rng, hashSeed } from '../dsp/rng.js';
@@ -21,7 +21,7 @@ const store = {
 };
 const fresh = new URLSearchParams(location.search).has('fresh');
 let patch = (!fresh && store.get('patch')) || defaultPatch();
-function upgrade(p) { for (const m of p.mods) if (m.shape == null) m.shape = 0; return p; }
+function upgrade(p) { for (const m of p.mods) if (m.shape == null) m.shape = 0; for (const o of p.ops) if (o.amp == null) o.amp = 0; return p; }
 upgrade(patch);
 const ui = {
   seedLocked: false,
@@ -235,6 +235,8 @@ function buildOp(i) {
   el('div', 'letter', head, OP_NAMES[i]);
   const role = el('div', 'role', head, '');
   selector(ctx, head, { path: o + 'ratioMode', labels: ['ratio', 'fixed'], values: ['ratio', 'fixed'], width: 42 });
+  const ampSel = selector(ctx, head, { path: o + 'amp', labels: AMP_SOURCES.map((a) => 'amp ' + a), width: 42 });
+  ampSel.title = 'amp source: env = note envelope, hold = steady level, lfo1-4 = level follows that LFO';
   const rr = el('div', 'row', head); rr.style.gap = '2px';
   button(rr, 'fm', () => rndSection('voice', i), 'randomise this operator\'s FM settings');
   button(rr, 'clk', () => rndSection('clocks', i), 'randomise this operator\'s clock');
