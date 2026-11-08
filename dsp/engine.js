@@ -12,6 +12,7 @@ const TWO_PI = Math.PI * 2;
 
 const CTRL = 32;                 // control-rate interval in samples
 const LN_MINUS_60DB = Math.log(0.001);
+const SUB = 8;                    // samples between per-operator input updates
 const RETRIGGER_FADE = 64;       // samples
 const ALGO_FADE_SEC = 0.004;
 
@@ -73,6 +74,7 @@ export class Engine {
     // SMOOTH: de-click smoothing on operator gain and pitch, set at control rate from voice.smooth
     this.gainSm = new Float64Array(NUM_OPS); this.gainK = 1 - Math.exp(-1 / (0.0012 * sr));
     this.freqSm = new Float64Array(NUM_OPS); this.freqK = 1;
+    this.gainTg = new Float64Array(NUM_OPS); this.freqTg = new Float64Array(NUM_OPS); this.subCount = 0;
     this.retrigFade = RETRIGGER_FADE; this.algoFade = ALGO_FADE_SEC; this.attFloor = 0;
     this.fbOp = new Float64Array(NUM_OPS); this.fbWork = new Float64Array(NUM_OPS); this.paths = new Float64Array(6); this._z6 = new Float64Array(NUM_OPS);
     this._z0 = new Float64Array(NUM_OPS); this._z1 = new Float64Array(NUM_OPS); this._z2 = new Float64Array(NUM_OPS);
@@ -317,6 +319,7 @@ export class Engine {
     let keep = 0;
     for (let i = 0; i < NUM_OPS; i++) if (this.patch.ops[i].clock === 1) keep |= 1 << i;
     this.voice.trigger(offset, keep);
+    this.subCount = 0;
     this.fadePos = 0;
     this.fadeLen = this.retrigFade;
     if (this.onTrigger) this.onTrigger(this.sample);
@@ -437,6 +440,7 @@ export class Engine {
           if (free && sq.fired && !isReset) this.voice.retrigOp(i);
           this.lockDecCoef[i] = sq.lockDecay != null ? decayCoef(sq.lockDecay, this.sr) : 0;
           if (this.onWrap) this.onWrap(i, this.sample, off, isReset);
+          this.subCount = 0;
         }
       }
 
@@ -452,8 +456,12 @@ export class Engine {
         this._trigger(mOff);
       }
 
-      // per-operator inputs
-      const fb = this.fbWork; fb.set(this.fbOp);
+      // per-operator inputs: step shapes, levels and pitch targets are worked out every SUB samples
+      // (or at once when a step or note starts); per-sample smoothing below fills the gaps
+      const fb = this.fbWork, tg = this.gainTg, tf = this.freqTg;
+      if (this.subCount <= 0) {
+      this.subCount = SUB;
+      fb.set(this.fbOp);
       for (let i = 0; i < NUM_OPS; i++) {
         const op = ops[i], sq = seqs[i];
         const m = sq.value(this.sPhase[i]);
@@ -469,23 +477,30 @@ export class Engine {
         }
         const amp = op.amp | 0;
         if (amp >= 2) gain *= 0.5 * (1 + this.modVal[amp - 2]); // level follows an LFO
-        this.gainSm[i] += (gain - this.gainSm[i]) * this.gainK; // step edges (fall, gate, swell) no longer click
-        this.gain[i] = this.gainSm[i];
+        tg[i] = gain;
         let base;
         if (op.ratioMode === 'fixed') base = this.fixedSm[i] * (op.dest === 2 ? fmul : 1);
         else {
           const ratio = sq.lockRatio != null ? sq.lockRatio : this.ratioSm[i];
           base = this.voiceHz * ratio * fmul;
         }
-        const fs = this.freqSm[i];
-        this.freq[i] = this.freqSm[i] = fs > 0 && this.freqK < 1 ? fs + (base - fs) * this.freqK : base;
+        tf[i] = base;
         if (sq.lockFeedback != null) fb[i] = sq.lockFeedback;
       }
-      const dc = this.dcWork;
+      const dcw = this.dcWork;
       for (let i = 0; i < NUM_OPS; i++) {
-        if ((ops[i].amp | 0) !== 0) dc[i] = 1;              // hold / LFO: no envelope decay
-        else if (this.lockDecCoef[i] > 0) dc[i] = this.lockDecCoef[i];
-        else dc[i] = this.decCoef[i];
+        if ((ops[i].amp | 0) !== 0) dcw[i] = 1;              // hold / LFO: no envelope decay
+        else if (this.lockDecCoef[i] > 0) dcw[i] = this.lockDecCoef[i];
+        else dcw[i] = this.decCoef[i];
+      }
+      }
+      this.subCount--;
+      const dc = this.dcWork, gk = this.gainK, fk = this.freqK;
+      for (let i = 0; i < NUM_OPS; i++) {
+        const g = this.gainSm[i] += (tg[i] - this.gainSm[i]) * gk; // step edges no longer click
+        this.gain[i] = g;
+        const fs = this.freqSm[i];
+        this.freq[i] = this.freqSm[i] = fs > 0 && fk < 1 ? fs + (tf[i] - fs) * fk : tf[i];
       }
 
       const vc = this.voice;

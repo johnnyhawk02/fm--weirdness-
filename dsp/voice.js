@@ -67,12 +67,9 @@ export class Voice {
     const off = this.subOffset || 0;
     this.subOffset = 0;
     const ppm = this.pathPm;
-    for (let j = NUM_OPS - 1; j >= 0; j--) {
-      // cross-feedback, gathered before op j renders
-      let x = 0;
-      for (let k = 0; k < paths.length; k += 3) if (paths[k + 1] === j && paths[k + 2] !== 0) x += paths[k + 2] * this.out[paths[k]];
-      ppm[j] = x * PATH_SCALE;
-    }
+    ppm.fill(0);
+    // cross-feedback: each path adds the source's latest output to the target's phase
+    for (let k = 0; k < paths.length; k += 3) { const a = paths[k + 2]; if (a !== 0) ppm[paths[k + 1]] += a * PATH_SCALE * this.out[paths[k]]; }
     for (let j = NUM_OPS - 1; j >= 0; j--) {
       // envelope
       let e = this.env[j];

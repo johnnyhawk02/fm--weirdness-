@@ -7,7 +7,6 @@
 //   limiter    - smooth soft clip that never exceeds the ceiling, so nothing hard-clips.
 // amount 0..1 sets how hard all three work (0 = bypass apart from the safety limiter).
 
-const db = (x) => 20 * Math.log10(Math.max(1e-9, x));
 const undb = (d) => Math.pow(10, d / 20);
 
 export class Dynamics {
@@ -17,6 +16,7 @@ export class Dynamics {
     this.lvl = 1;           // leveller gain
     this.env = 0;           // compressor envelope
     this.gr = 1;            // last compressor gain (for the meter)
+    this.cnt = 0;
     this.aRms = 1 - Math.exp(-1 / (0.4 * sr));
     this.aLvl = 1 - Math.exp(-1 / (1.5 * sr));
     this.att = 1 - Math.exp(-1 / (0.005 * sr));
@@ -54,13 +54,14 @@ export class Dynamics {
       // compressor
       const x = Math.max(Math.abs(l), Math.abs(r));
       this.env += (x - this.env) * (x > this.env ? this.att : this.rel);
-      let g = 1;
-      if (this.env > this.thresh) {
-        const over = db(this.env) - db(this.thresh);
-        g = undb(-over * (1 - 1 / this.ratio));
+      // gain computer every 8 samples (log/pow are expensive); the envelope itself runs per sample
+      if (--this.cnt <= 0) {
+        this.cnt = 8;
+        let g = 1;
+        if (this.env > this.thresh) g = Math.pow(this.env / this.thresh, -(1 - 1 / this.ratio));
+        this.gr = g;
       }
-      this.gr = g;
-      g *= this.makeup;
+      const g = this.gr * this.makeup;
       l *= g; r *= g;
     }
     // soft limiter: linear below the knee, smooth tanh-style curve up to the ceiling

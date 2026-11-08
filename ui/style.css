@@ -219,3 +219,6 @@ canvas { display: block; }
   .gate { width: 15px; height: 22px; }
   .gates { gap: 1px; }
 }
+
+.load { font-size: 10px; color: var(--mid); margin-left: 6px; }
+.load.hot { color: var(--spot); font-weight: 700; }

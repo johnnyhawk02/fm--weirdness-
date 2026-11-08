@@ -11,6 +11,8 @@ class FMSeqProcessor extends AudioWorkletProcessor {
     this.state = new Float32Array(STATE_SIZE);
     this.interval = Math.round(sampleRate / 60); // ~60 UI updates per second
     this.counter = 0;
+    this.busy = 0; this.span = 0; this.load = 0; // DSP load: time spent in process / audio time
+    this.now = (globalThis.performance && globalThis.performance.now) ? () => globalThis.performance.now() : () => Date.now();
     this.port.onmessage = (e) => this.onMessage(e.data);
   }
 
@@ -33,7 +35,9 @@ class FMSeqProcessor extends AudioWorkletProcessor {
     const L = out[0], R = out[1] || out[0];
     if (!this.running) return true;
     const n = L.length;
+    const t0 = this.now();
     this.engine.process(L, R, n);
+    this.busy += this.now() - t0; this.span += n;
     if (this.stopping) { // short fade instead of a click
       for (let i = 0; i < n; i++) { this.gain = Math.max(0, this.gain - 1 / 256); L[i] *= this.gain; R[i] *= this.gain; }
       if (this.gain <= 0) { this.running = false; this.stopping = false; this.port.postMessage({ type: 'stopped' }); }
@@ -43,7 +47,8 @@ class FMSeqProcessor extends AudioWorkletProcessor {
       this.counter -= this.interval;
       const eng = this.engine;
       eng.writeState(this.state);
-      this.port.postMessage({ type: 'state', state: this.state.slice() });
+      if (this.span >= sampleRate / 2) { this.load = this.busy / (this.span / sampleRate * 1000); this.busy = 0; this.span = 0; }
+      this.port.postMessage({ type: 'state', state: this.state.slice(), load: this.load });
       if (eng.dirtyVoice || eng.dirtyOps.some(Boolean)) {
         const ops = {};
         eng.dirtyOps.forEach((d, i) => { if (d) ops[i] = { steps: eng.patch.ops[i].steps, mult: eng.patch.ops[i].mult }; });
