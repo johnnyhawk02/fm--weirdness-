@@ -1,0 +1,29 @@
+# FM/STEP: one FM voice, four free-running operator sequencers
+
+Browser prototype (plain JS, Web Audio, AudioWorklet). All DSP lives in `dsp/` as plain ES modules
+with no DOM use, ready to port to C++/JUCE.
+
+## Run
+    node tools/serve.mjs 8080      # then open http://localhost:8080/  (?fresh ignores the saved patch)
+    npm test                        # Node tests (clock ratios/sync/drift, 4-bar WAV, seed determinism, mutate)
+    node tools/render.mjs 4 out/render.wav [seed]
+    node tools/screenshots.mjs      # 1440x900 and 1280x800 with the voice running
+
+## Layout
+- `dsp/engine.js`: master saw, slave saws (sync / free / drift / scatter / jumps), note trigger, mods, crossfades
+- `dsp/voice.js`: 4-op phase-modulation voice, 8 algorithms, D feedback, anti-alias index scaling
+- `dsp/sequencer.js`: step state machine (prob, ratchet, skip, repeat, locks, jitter, direction) and mutate
+- `dsp/shapes.js`, `dsp/random.js` (seeded randomisers, fill styles, morph), `dsp/params.js`, `dsp/rng.js`
+- `worklet/processor.js`: AudioWorklet host, posts state about 60 times a second over the MessagePort
+- `ui/`: LCD interface
+
+## Behaviour notes
+- Level destination: gain = (1 - amt) + amt x g, where g = depth x shape for positive steps,
+  1 - |depth| x shape for negative steps (ducking), and 0 for empty or unfired steps.
+- Ratio destination: up to +-2 octaves, pitch destination: up to +-24 semitones (range knob).
+- Synced saws are computed from the master position, so wraps land on the master wrap sample exactly.
+  "reset" = reset every N master cycles. Every wrap reports its sub-sample offset.
+- One seed drives every runtime random stream; the same patch and seed render bit-identically at any block size.
+- Controls: shift-click any knob/selector = rnd (by rnd amount), dbl-click = default, alt-drag = fine.
+  Steps: drag = lane value, right-click/long-press = shape, shift-click = skip, alt-click = repeat, dbl-click = clear.
+  Snapshots: click empty slot = store, click full = recall, shift = overwrite, right = clear.

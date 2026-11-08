@@ -1,0 +1,13 @@
+{
+  "name": "fm-seq",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Single FM voice with free-running per-operator envelope sequencers (Web Audio prototype).",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "serve": "node tools/serve.mjs",
+    "render": "node tools/render.mjs",
+    "screenshots": "node tools/screenshots.mjs"
+  }
+}
