@@ -35,6 +35,8 @@ export class Engine {
     // control-rate effective values
     this.levelEff = new Float64Array(NUM_OPS);
     this.ratioEff = new Float64Array(NUM_OPS);
+    this.ratioSm = new Float64Array(NUM_OPS);   // slewed ratio (pitch faders glide)
+    this.fixedSm = new Float64Array(NUM_OPS);   // slewed fixed frequency
     this.decEff = new Float64Array(NUM_OPS);
     this.seqAmtEff = new Float64Array(NUM_OPS);
     this.lockDecCoef = new Float64Array(NUM_OPS);
@@ -104,6 +106,7 @@ export class Engine {
       this.sResetCycle[i] = 0; this.drift[i] = 0; this.driftTarget[i] = 0; this.sValue[i] = 0;
       this.modVal[i] = 0; this.modTarget[i] = 0; this.modTimer[i] = 0; this.modPhase[i] = 0;
       this.effMult[i] = this.patch.ops[i].mult; this.rateMod[i] = 0;
+      this.ratioSm[i] = 0; this.fixedSm[i] = 0;
     }
     this.voice = new Voice(this.sr);
     this.tail = new Voice(this.sr);
@@ -207,6 +210,12 @@ export class Engine {
       const op = p.ops[i];
       this.levelEff[i] = clamp(op.level + mLevel[i], 0, 1);
       this.ratioEff[i] = op.ratio * Math.pow(2, mRatio[i] * 2 + op.fine / 1200);
+      // pitch slew: glide in the log (musical) domain
+      const slew = v.pitchSlew || 0;
+      const ks = slew <= 0 || !(this.ratioSm[i] > 0) ? 1 : 1 - Math.exp(-dt / slew);
+      const tr = this.ratioEff[i], tf = op.fixedHz;
+      this.ratioSm[i] = ks >= 1 ? tr : this.ratioSm[i] * Math.pow(tr / this.ratioSm[i], ks);
+      this.fixedSm[i] = ks >= 1 || !(this.fixedSm[i] > 0) ? tf : this.fixedSm[i] * Math.pow(tf / this.fixedSm[i], ks);
       this.decEff[i] = op.decay * Math.pow(2, mDecay[i] * 3);
       this.decCoef[i] = decayCoef(this.decEff[i], sr);
       this.attInc[i] = 1 / (Math.max(0.0002, op.attack) * sr);
@@ -388,9 +397,9 @@ export class Engine {
         if (amp >= 2) gain *= 0.5 * (1 + this.modVal[amp - 2]); // level follows an LFO
         this.gain[i] = gain;
         let base;
-        if (op.ratioMode === 'fixed') base = op.fixedHz * (op.dest === 2 ? fmul : 1);
+        if (op.ratioMode === 'fixed') base = this.fixedSm[i] * (op.dest === 2 ? fmul : 1);
         else {
-          const ratio = sq.lockRatio != null ? sq.lockRatio : this.ratioEff[i];
+          const ratio = sq.lockRatio != null ? sq.lockRatio : this.ratioSm[i];
           base = this.voiceHz * ratio * fmul;
         }
         this.freq[i] = base;
@@ -425,16 +434,18 @@ export class Engine {
   writeState(arr) {
     arr[0] = this.mPhase; arr[1] = this.cycle; arr[2] = this.algoEff;
     for (let i = 0; i < NUM_OPS; i++) {
-      const b = 3 + i * 5;
+      const b = 3 + i * OP_STATE;
       arr[b] = this.sPhase[i];
       arr[b + 1] = this.seqs[i].pos;
       arr[b + 2] = this.seqs[i].fired ? 1 : 0;
       arr[b + 3] = this.patch.ops[i].clock === 1 ? this.effHz[i] : this.effMult[i];
       arr[b + 4] = this.sValue[i];
+      arr[b + 5] = this.patch.ops[i].ratioMode === 'fixed' ? this.fixedSm[i] : this.ratioSm[i];
     }
-    for (let m = 0; m < 4; m++) arr[3 + NUM_OPS * 5 + m] = this.modVal[m];
+    for (let m = 0; m < 4; m++) arr[3 + NUM_OPS * OP_STATE + m] = this.modVal[m];
     return arr;
   }
 }
-export const STATE_SIZE = 3 + NUM_OPS * 5 + 4;
+export const OP_STATE = 6; // per op: phase, pos, fired, rate, seq value, current (slewed) pitch
+export const STATE_SIZE = 3 + NUM_OPS * OP_STATE + 4;
 export { MOD_TARGETS };

@@ -107,3 +107,19 @@ test('randomise-everything patches stay finite, under 0 dBFS and audible', () =>
     check(L, R, `everything seed ${seed}`);
   }
 });
+
+test('operator pitch glides with slew instead of jumping', () => {
+  const p = defaultPatch();
+  p.voice.pitchSlew = 0.5;
+  for (const m of p.mods) m.on = false;
+  const e = new Engine(SR);
+  e.setPatch(p); e.reset();
+  const L = new Float32Array(128), R = new Float32Array(128);
+  for (let i = 0; i < SR * 0.2; i += 128) e.process(L, R, 128);
+  const q = clonePatch(p); q.ops[1].ratio = 8; e.setPatch(q);
+  for (let i = 0; i < SR * 0.25; i += 128) e.process(L, R, 128);
+  const mid = e.ratioSm[1];
+  assert.ok(mid > 2.5 && mid < 7.5, `halfway through the glide the ratio is ${mid}`);
+  for (let i = 0; i < SR * 4; i += 128) e.process(L, R, 128);
+  assert.ok(Math.abs(e.ratioSm[1] - 8) < 0.01, 'glide arrives at the target');
+});

@@ -83,6 +83,7 @@ export function defaultPatch() {
       pitchMode: 'note', note: 45, hz: 110,
       pitchEnvSemis: 7, pitchEnvDecay: 0.02,
       level: 0.8, pan: 0, algorithm: 1, feedback: 0.2,
+      pitchSlew: 0.4, // seconds: operator pitch glide time
     },
     clock: {
       mode: 'bpm', bpm: 120, beats: 1, hz: 0.5,
@@ -160,6 +161,7 @@ export const PARAM_SPECS = [
   { path: 'voice.level', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.7, nornd: true },
   { path: 'voice.pan', section: 'voice', type: 'lin', min: -1, max: 1, def: 0, rndScale: 0.5 },
   { path: 'voice.algorithm', section: 'voice', type: 'choice', n: 8, def: 0 },
+  { path: 'voice.pitchSlew', section: 'voice', type: 'log', min: 0.001, max: 8, def: 0.4, rndMax: 2 },
   { path: 'voice.feedback', section: 'voice', type: 'lin', min: -1, max: 1, def: 0 },
   { path: 'clock.bpm', section: 'clocks', type: 'int', min: 10, max: 999, def: 120, rndMin: 70, rndMax: 180 },
   { path: 'clock.beats', section: 'clocks', type: 'int', min: 1, max: 16, def: 4, rndMax: 8 },

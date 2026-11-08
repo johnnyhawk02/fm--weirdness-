@@ -27,6 +27,9 @@ with no DOM use, ready to port to C++/JUCE.
 - Presets on a phone: the name, previous/next and SAVE sit at the top of every tab. SAVE is filled when there are
   unsaved changes and reads SAVED when stored; a banner confirms each save and load. The PRESETS tab lists all
   presets (tap to load) with save as new, delete (tap twice), export and import.
+- PITCH page (PITCH button on desktop, PITCH tab on phones): seven long-throw faders for operator pitch
+  (ratio 0.5-16, or Hz for fixed operators). Pitch changes glide with the slew time; the orange line shows the
+  pitch the engine is playing right now. Snap quantises ratios to harmonic steps; multi-touch works.
 - Clock per sequencer: `link` (follows the master saw x mult, with sync/reset) or `free` (default: runs on its
   own rate in Hz, unlinked from the master and from the other sequencers). A free sequencer retriggers its own
   operator's envelope on every fired step, so each one plays as its own part.

@@ -7,7 +7,7 @@ import { SHAPES, shapeValue } from '../dsp/shapes.js';
 import { Rng, hashSeed } from '../dsp/rng.js';
 import { randomizePath, randomizeSection, fillSteps, rndLocks, rndAll, morphPatches, randomLockValue, randomizeEverything } from '../dsp/random.js';
 import { presetName } from './names.js';
-import { el, knob, selector, toggle, button, hiCanvas, toNorm, fromNorm } from './widgets.js';
+import { el, knob, selector, toggle, button, hiCanvas, toNorm, fromNorm, RATIO_STEPS } from './widgets.js';
 
 const C = { ink: '#17200e', spot: '#e0532a', dim: 'rgba(23,32,14,0.22)', faint: 'rgba(23,32,14,0.10)', bg: '#d1c7ac', mid: 'rgba(23,32,14,0.55)' };
 const NOTE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -178,6 +178,9 @@ const startBtn = button(top, 'START', startStop, 'space');
 startBtn.id = 'start';
 const bigRnd = button(top, 'RANDOMISE', () => randomiseAll(), 'randomise everything, ignoring locks, with a new name (R)');
 bigRnd.id = 'bigrnd';
+const pitchBtn = button(top, 'PITCH', () => { document.getElementById('app').classList.toggle('pitch-open'); refreshAll(); }, 'operator pitch faders');
+pitchBtn.id = 'pitchbtn';
+ctx.register(() => pitchBtn.classList.toggle('on', document.getElementById('app').classList.contains('pitch-open')));
 ctx.register(() => { startBtn.textContent = ui.running ? 'STOP' : 'START'; startBtn.classList.toggle('spot', ui.running); });
 el('div', 'sep', top);
 
@@ -641,10 +644,114 @@ const gateEls = Array.from({ length: MAX_STEPS }, (_, k) => {
 });
 ctx.register(() => gateEls.forEach((g, k) => { g.classList.toggle('on', !!patch.clock.gate[k]); g.classList.toggle('off-len', k >= patch.clock.gateLen); }));
 
+// ---------------- pitch faders ----------------
+const pitchEl = document.getElementById('pitch');
+pitchEl.classList.add('panel');
+const ph = el('div', 'row', pitchEl); ph.style.alignItems = 'flex-end'; ph.style.gap = '8px';
+el('div', 'title', ph, 'operator pitch');
+knob(ctx, ph, { path: 'voice.pitchSlew', label: 'slew', fmt: (v) => (v < 1 ? (v * 1000).toFixed(0) + 'ms' : v.toFixed(2) + 's') });
+ui.pitchSnap = false;
+const snapT = el('div', 'tog off', ph, 'snap');
+snapT.title = 'snap ratios to harmonic steps';
+snapT.addEventListener('pointerdown', () => { ui.pitchSnap = !ui.pitchSnap; snapT.classList.toggle('on', ui.pitchSnap); snapT.classList.toggle('off', !ui.pitchSnap); });
+button(ph, 'rnd', () => {
+  pushUndo();
+  const r = uiRng();
+  for (const op of patch.ops) {
+    if (r.next() >= patch.rnd.amount) continue;
+    if (op.ratioMode === 'fixed') op.fixedHz = Math.round(Math.exp(r.range(Math.log(40), Math.log(4000))));
+    else op.ratio = ui.pitchSnap ? RATIO_STEPS[r.int(RATIO_STEPS.length)] : Math.round(Math.exp(r.range(Math.log(0.5), Math.log(16))) * 1000) / 1000;
+  }
+  changed(true);
+}, 'randomise operator pitches (glides with slew)');
+const pHint = el('div', 'val', ph, 'drag a fader · the orange line is the gliding pitch · dbl-tap resets');
+pHint.style.color = C.mid; pHint.style.whiteSpace = 'normal';
+const faders = hiCanvas(pitchEl, 'faders');
+const RATIO_SPEC = { type: 'log', min: 0.5, max: 16 }, HZ_SPEC = { type: 'log', min: 20, max: 8000 };
+function faderSpec(i) { return patch.ops[i].ratioMode === 'fixed' ? HZ_SPEC : RATIO_SPEC; }
+function faderGeom() {
+  const w = faders._w, h = faders._h;
+  return { w, h, cw: w / NUM_OPS, top: 30, bot: h - 22 };
+}
+const faderPointers = new Map();
+function faderSet(e, col) {
+  const g = faderGeom();
+  const r = faders.getBoundingClientRect();
+  const n = (g.bot - (e.clientY - r.top)) / (g.bot - g.top);
+  const op = patch.ops[col];
+  let v = fromNorm(faderSpec(col), n);
+  if (op.ratioMode === 'fixed') { op.fixedHz = Math.round(v * 10) / 10; }
+  else {
+    if (ui.pitchSnap) v = RATIO_STEPS.reduce((b, x) => (Math.abs(Math.log(x / v)) < Math.abs(Math.log(b / v)) ? x : b), RATIO_STEPS[0]);
+    op.ratio = Math.round(v * 1000) / 1000;
+  }
+  changed(true);
+}
+faders.addEventListener('pointerdown', (e) => {
+  const r = faders.getBoundingClientRect();
+  const col = Math.max(0, Math.min(NUM_OPS - 1, Math.floor((e.clientX - r.left) / faderGeom().cw)));
+  pushUndo();
+  faderPointers.set(e.pointerId, col);
+  faders.setPointerCapture(e.pointerId);
+  faderSet(e, col);
+  e.preventDefault();
+});
+faders.addEventListener('pointermove', (e) => { if (faderPointers.has(e.pointerId)) faderSet(e, faderPointers.get(e.pointerId)); });
+const faderUp = (e) => faderPointers.delete(e.pointerId);
+faders.addEventListener('pointerup', faderUp);
+faders.addEventListener('pointercancel', faderUp);
+faders.addEventListener('dblclick', (e) => {
+  const r = faders.getBoundingClientRect();
+  const col = Math.floor((e.clientX - r.left) / faderGeom().cw);
+  const op = patch.ops[col]; if (!op) return;
+  if (op.ratioMode === 'fixed') op.fixedHz = 440; else op.ratio = defaultPatch().ops[col].ratio;
+  changed(true);
+});
+function drawFaders() {
+  const c = faders, g = c.getContext('2d'), geo = faderGeom();
+  if (!geo.w) return;
+  const dpr = c._dpr || 1;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = C.bg; g.fillRect(0, 0, geo.w, geo.h);
+  const st = ui.state, live = ui.running && !!st;
+  const H = geo.bot - geo.top;
+  const nseg = Math.max(10, Math.floor(H / 5));
+  const alg = ALGORITHMS[patch.voice.algorithm];
+  g.textBaseline = 'top'; g.textAlign = 'center';
+  for (let i = 0; i < NUM_OPS; i++) {
+    const op = patch.ops[i], sp = faderSpec(i);
+    const x0 = i * geo.cw, cx = x0 + geo.cw / 2;
+    const tw = Math.min(54, geo.cw - 12);
+    const n = toNorm(sp, op.ratioMode === 'fixed' ? op.fixedHz : op.ratio);
+    for (let q = 0; q < nseg; q++) {
+      const y = geo.bot - (q + 1) * (H / nseg);
+      const on = (q + 0.5) / nseg <= n;
+      g.fillStyle = on ? C.ink : C.faint;
+      g.fillRect(cx - tw / 2, y + 1, tw, H / nseg - 1.5);
+    }
+    // the gliding pitch the engine is playing right now
+    const now = live ? st[3 + i * 6 + 5] : 0;
+    if (now > 0) {
+      const y = geo.bot - H * Math.min(1, Math.max(0, toNorm(sp, now)));
+      g.fillStyle = C.spot; g.fillRect(cx - tw / 2 - 5, y - 1.5, tw + 10, 3);
+    }
+    g.fillStyle = C.ink;
+    g.font = '700 16px ui-monospace, Menlo, monospace';
+    g.fillText(OP_NAMES[i], cx, 2);
+    g.font = '9px ui-monospace, Menlo, monospace';
+    g.fillStyle = C.mid;
+    g.fillText(alg.carriers.includes(i) ? 'carrier' : 'mod', cx, 19);
+    g.fillStyle = C.ink;
+    g.font = '11px ui-monospace, Menlo, monospace';
+    g.fillText(op.ratioMode === 'fixed' ? op.fixedHz.toFixed(0) + 'hz' : '×' + op.ratio.toFixed(op.ratio < 10 ? 3 : 2), cx, geo.bot + 6);
+  }
+  g.textAlign = 'start';
+}
+
 // ---------------- phone tabs ----------------
 for (const g of [voiceG, algoG, outG]) g.parentElement.dataset.pane = 'voice';
 const tabsEl = document.getElementById('tabs');
-const TABS = [...OP_NAMES.map((n) => [n, n]), ['voice', 'VOICE'], ['lfo', 'LFO'], ['rnd', 'RND'], ['presets', 'PRESETS']];
+const TABS = [...OP_NAMES.map((n) => [n, n]), ['voice', 'VOICE'], ['lfo', 'LFO'], ['rnd', 'RND'], ['presets', 'PRESETS'], ['pitch', 'PITCH']];
 ui.tab = store.get('tab') || 'A';
 const tabRows = [el('div', 'tabrow', tabsEl), el('div', 'tabrow', tabsEl)];
 const tabEls = TABS.map(([id, text], k) => {
@@ -658,7 +765,7 @@ function setTab(id) {
   document.querySelectorAll('[data-pane]').forEach((n) => n.classList.toggle('pane-off', n.dataset.pane !== id));
   const isOp = OP_NAMES.includes(id);
   opsEl.classList.toggle('pane-off', !isOp);
-  bottom.classList.toggle('pane-off', isOp || id === 'voice');
+  bottom.classList.toggle('pane-off', isOp || id === 'voice' || id === 'pitch');
   if (id === 'presets') renderPresetList();
   tabEls.forEach((b) => b.classList.toggle('sel', b.dataset.tab === id));
 }
@@ -832,9 +939,9 @@ function drawStrip(i) {
   g.fillStyle = C.bg; g.fillRect(0, 0, geo.w, geo.h);
   const op = patch.ops[i];
   const st = ui.state;
-  const pos = st ? st[3 + i * 5 + 1] : -1;
-  const phase = st ? st[3 + i * 5] : 0;
-  const fired = st ? st[3 + i * 5 + 2] > 0 : false;
+  const pos = st ? st[3 + i * 6 + 1] : -1;
+  const phase = st ? st[3 + i * 6] : 0;
+  const fired = st ? st[3 + i * 6 + 2] > 0 : false;
   const lane = ui.lane[i];
   const segH = 3, segGap = 1;
   const nseg = Math.max(4, Math.floor(geo.H / (segH + segGap)));
@@ -901,6 +1008,7 @@ function drawStrip(i) {
 }
 
 function frame() {
+  if (pitchEl.offsetParent !== null) drawFaders();
   if (patchDirty && node && ui.running) {
     node.port.postMessage({ type: 'patch', patch });
     patchDirty = false;
@@ -913,14 +1021,14 @@ function frame() {
   for (let i = 0; i < NUM_OPS; i++) {
     if (opUI[i].row.classList.contains('pane-off') && window.innerWidth <= 760) continue;
     drawStrip(i);
-    drawSaw(opUI[i].saw, live ? st[3 + i * 5] : 0, live);
-    const pos = live ? st[3 + i * 5 + 1] + 1 : 0;
+    drawSaw(opUI[i].saw, live ? st[3 + i * 6] : 0, live);
+    const pos = live ? st[3 + i * 6 + 1] + 1 : 0;
     opUI[i].posLbl.textContent = live ? `step ${String(pos).padStart(2, '0')}/${patch.ops[i].length}` : `${patch.ops[i].length} steps`;
   }
   const liveAlgo = live ? st[2] : -1;
   algoEls.forEach((b, k) => b.classList.toggle('live', k === liveAlgo));
   for (let m = 0; m < 4; m++) {
-    const v = live ? st[3 + NUM_OPS * 5 + m] : 0;
+    const v = live ? st[3 + NUM_OPS * 6 + m] : 0;
     modBars[m].style.left = `calc(${((v + 1) / 2 * 100).toFixed(1)}% - 1px)`;
     modBars[m].style.opacity = patch.mods[m].on ? 1 : 0.3;
   }

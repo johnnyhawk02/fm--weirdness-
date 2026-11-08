@@ -100,6 +100,14 @@ canvas { display: block; }
 .jumpset .j { width: 9px; height: 8px; border: 1px solid var(--dim); cursor: pointer; }
 .jumpset .j.on { background: var(--ink); border-color: var(--ink); }
 
+/* pitch faders page */
+#pitch { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
+#app.pitch-open #ops { display: none; }
+#app.pitch-open #pitch { display: flex; }
+.faders { flex: 1; min-height: 200px; width: 100%; touch-action: none; cursor: ns-resize; }
+#pitchbtn { width: 56px; height: 44px; line-height: 42px; font-size: 11px; font-weight: 700; }
+#pitchbtn.on { background: var(--spot); border-color: var(--spot); color: var(--bg); }
+
 /* bottom */
 #bottom { display: flex; gap: 6px; height: 132px; }
 #bottom > .panel { display: flex; flex-direction: column; gap: 3px; }
@@ -149,6 +157,10 @@ canvas { display: block; }
   .tabrow { display: flex; gap: 3px; }
   #tabs .btn { flex: 1; height: 28px; line-height: 26px; font-size: 11px; font-weight: 700; padding: 0; }
   .phone-only { display: flex !important; }
+  #pitchbtn { display: none; }
+  #pitch { display: flex; flex: 1; }
+  #pitch.pane-off { display: none; }
+  .faders { min-height: 0; }
   .phone-only.pane-off { display: none !important; }
   .presetspanel { flex: 1 !important; min-height: 0; flex-direction: column; gap: 6px; }
   .presetspanel .btn { height: 34px; line-height: 32px; font-size: 11px; padding: 0 10px; }
