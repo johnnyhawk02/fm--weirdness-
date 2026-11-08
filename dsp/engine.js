@@ -12,6 +12,9 @@ const TWO_PI = Math.PI * 2;
 
 const CTRL = 32;                 // control-rate interval in samples
 const LN_MINUS_60DB = Math.log(0.001);
+const NO_PATHS = [];
+const OP_KEYS = new Map(); // 'B.level' -> 'level', cached so the audio thread never allocates strings
+function opKey(t) { let k = OP_KEYS.get(t); if (k === undefined) { k = t.slice(2); OP_KEYS.set(t, k); } return k; }
 const SUB = 8;                    // samples between per-operator input updates
 const RETRIGGER_FADE = 64;       // samples
 const ALGO_FADE_SEC = 0.004;
@@ -192,7 +195,7 @@ export class Engine {
       else if (t === 'clock') mClock += x;
       else if (t === 'width') mWidth += x;
       else {
-        const oi = t.charCodeAt(0) - 65, key = t.slice(2);
+        const oi = t.charCodeAt(0) - 65, key = opKey(t); // no string allocation on the audio thread
         if (key === 'level') mLevel[oi] += x;
         else if (key === 'ratio') mRatio[oi] += x;
         else if (key === 'decay') mDecay[oi] += x;
@@ -225,11 +228,11 @@ export class Engine {
     this.fbEff = clamp(v.feedback + mFb + mFbOp[NUM_OPS - 1], -1, 1);
     for (let i = 0; i < NUM_OPS - 1; i++) this.fbOp[i] = clamp((p.ops[i].fb || 0) + mFbOp[i], -1, 1);
     this.fbOp[NUM_OPS - 1] = this.fbEff;
-    const ps = v.paths || [], pm = [mP1, mP2];
+    const ps = v.paths || NO_PATHS;
     for (let k = 0; k < 2; k++) {
       const q = ps[k];
       this.paths[k * 3] = q ? q.from | 0 : 0; this.paths[k * 3 + 1] = q ? q.to | 0 : 0;
-      this.paths[k * 3 + 2] = q ? clamp(q.amt + pm[k], -1, 1) : 0;
+      this.paths[k * 3 + 2] = q ? clamp(q.amt + (k === 0 ? mP1 : mP2), -1, 1) : 0;
     }
     this.pitchSemis = v.pitchEnvSemis;
     this.pitchCoef = Math.exp(-1 / (Math.max(0.001, v.pitchEnvDecay) * sr));

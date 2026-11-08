@@ -124,7 +124,7 @@ async function ensureAudio() {
   node.port.onmessage = (e) => onWorklet(e.data);
 }
 function onWorklet(m) {
-  if (m.type === 'state') { ui.state = m.state; ui.load = m.load || 0; }
+  if (m.type === 'state') { ui.state = m.state; ui.load = m.load || 0; ui.peak = m.peak || 0; }
   else if (m.type === 'sync') {
     for (const k of Object.keys(m.ops)) { patch.ops[k].steps = m.ops[k].steps; patch.ops[k].mult = m.ops[k].mult; }
     if (m.algorithm != null) patch.voice.algorithm = m.algorithm;
@@ -169,7 +169,7 @@ button(presetBar, '▸', () => stepPreset(1), 'next preset').classList.add('pnav
 const saveBtn = button(presetBar, 'SAVE', () => savePreset(), 'save this sound as a preset under the name shown');
 saveBtn.classList.add('savebtn');
 const saveState = el('div', 'savestate', brand, '');
-const BUILD = '1108-1642'; // bump on each deploy so a stale cached page is easy to spot
+const BUILD = '1108-1655'; // bump on each deploy so a stale cached page is easy to spot
 const loadEl = el('span', 'load', brand, 'build ' + BUILD);
 loadEl.title = 'audio engine load: above ~70% the sound may break up';
 ctx.register(() => {
@@ -1123,8 +1123,9 @@ function frame() {
     const gi = Math.floor(st[0] * patch.clock.gateLen);
     gateEls.forEach((g, k) => g.classList.toggle('cur', k === gi));
   } else gateEls.forEach((g) => g.classList.remove('cur'));
-  const ld = ui.running ? Math.round((ui.load || 0) * 100) : -1;
-  if (ld !== ui.loadShown) { ui.loadShown = ld; loadEl.textContent = ld >= 0 ? `dsp ${ld}%` : 'build ' + BUILD; loadEl.classList.toggle('hot', ld >= 70); }
+  const ld = ui.running ? Math.round((ui.load || 0) * 100) : -1, pk = Math.round((ui.peak || 0) * 100);
+  const lt = ld >= 0 ? `dsp ${ld}% · peak ${pk}%` : 'build ' + BUILD;
+  if (lt !== ui.loadShown) { ui.loadShown = lt; loadEl.textContent = lt; loadEl.classList.toggle('hot', pk >= 80); }
   requestAnimationFrame(frame);
 }
 
