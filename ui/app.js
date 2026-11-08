@@ -5,7 +5,7 @@ import {
 } from '../dsp/params.js';
 import { SHAPES, shapeValue } from '../dsp/shapes.js';
 import { Rng, hashSeed } from '../dsp/rng.js';
-import { randomizePath, randomizeSection, fillSteps, rndLocks, rndAll, morphPatches, randomLockValue, randomizeEverything } from '../dsp/random.js';
+import { randomizePath, randomizeSection, fillSteps, rndLocks, rndAll, morphPatches, randomLockValue, randomizeEverything, alterEverything } from '../dsp/random.js';
 import { presetName } from './names.js';
 import { el, knob, selector, toggle, button, hiCanvas, toNorm, fromNorm, RATIO_STEPS } from './widgets.js';
 
@@ -181,6 +181,8 @@ const startBtn = button(top, 'START', startStop, 'space');
 startBtn.id = 'start';
 const bigRnd = button(top, 'RANDOMISE', () => randomiseAll(), 'randomise everything, ignoring locks, with a new name (R)');
 bigRnd.id = 'bigrnd';
+const alterBtn = button(top, 'ALTER', () => alterAll(), 'nudge every setting a tiny amount, keeping the sound (A)');
+alterBtn.id = 'alter';
 const pitchBtn = button(top, 'PITCH', () => { document.getElementById('app').classList.toggle('pitch-open'); refreshAll(); }, 'operator pitch faders');
 pitchBtn.id = 'pitchbtn';
 ctx.register(() => pitchBtn.classList.toggle('on', document.getElementById('app').classList.contains('pitch-open')));
@@ -555,6 +557,13 @@ function randomiseAll() {
   randomizeEverything(patch, new Rng(hashSeed(patch.seed, 'everything')));
   changed(true);
   ui.presetDirty = true;
+}
+function alterAll() {
+  pushUndo();
+  alterEverything(patch, new Rng((Math.random() * 4294967296) >>> 0), 0.03);
+  changed(true);
+  ui.presetDirty = true;
+  flash('altered');
 }
 function rndEverything(rename) {
   pushUndo();
@@ -1078,6 +1087,7 @@ window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.code === 'Space') { e.preventDefault(); startStop(); }
   else if (e.key === 'r' && !e.ctrlKey && !e.metaKey) randomiseAll();
+  else if (e.key === 'a' && !e.ctrlKey && !e.metaKey) alterAll();
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); savePreset(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }

@@ -73,6 +73,8 @@ input.num:focus { border-color: var(--spot); }
 #bigrnd { width: 82px; height: 44px; line-height: 42px; font-size: 10px; font-weight: 700;
   letter-spacing: 0.06em; background: var(--ink); color: var(--bg); }
 #bigrnd:active { background: var(--spot); border-color: var(--spot); }
+#alter { width: 58px; height: 44px; line-height: 42px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; }
+#alter:active { background: var(--spot); border-color: var(--spot); color: var(--bg); }
 .brand small { display: block; font-weight: 400; font-size: 8px; letter-spacing: 0.08em; color: var(--mid); margin-top: 3px; }
 canvas { display: block; }
 
@@ -155,7 +157,7 @@ canvas { display: block; }
   .presetbar .savebtn { min-width: 86px; font-weight: 700; }
   .savestate { flex: 1 1 100%; font-size: 10px; margin-top: 0; }
   .pname { margin-top: 0; flex: 1; width: auto; min-width: 0; font-size: 14px; height: 28px; }
-  #start, #bigrnd { flex: 1 1 40%; height: 38px; line-height: 36px; }
+  #start, #bigrnd, #alter { flex: 1 1 22%; height: 38px; line-height: 36px; }
   #top > .col { flex: none; }
   .algos { display: grid; position: static; transform: none; grid-template-columns: repeat(8, 1fr); gap: 3px; padding: 0; border: 0; }
   .algocur .btn:last-child { display: none; }

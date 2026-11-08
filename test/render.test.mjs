@@ -149,3 +149,24 @@ test('every algorithm in every stereo mode stays finite and under 0 dBFS; carrie
   let d = 0; for (let i = 0; i < L.length; i++) d += Math.abs(L[i] - R[i]);
   assert.ok(d > 10, `carrier pair L/R difference ${d}`);
 });
+
+test('alter nudges values slightly and keeps them in range', async () => {
+  const { defaultPatch, PARAM_SPECS, getPath, clonePatch } = await import('../dsp/params.js');
+  const { alterEverything } = await import('../dsp/random.js');
+  const { Rng } = await import('../dsp/rng.js');
+  const a = defaultPatch();
+  const b = clonePatch(a);
+  alterEverything(b, new Rng(7), 0.03);
+  let moved = 0;
+  for (const s of PARAM_SPECS) {
+    const x = getPath(a, s.path), y = getPath(b, s.path);
+    if (typeof y !== 'number') continue;
+    assert.ok(isFinite(y), s.path);
+    if (s.min !== undefined) assert.ok(y >= s.min - 1e-9 && y <= s.max + 1e-9, s.path);
+    if (s.type === 'lin') assert.ok(Math.abs(y - x) <= 0.061 * (s.max - s.min), s.path);
+    if (s.type !== 'lin' && s.type !== 'log') assert.equal(y, x, s.path);
+    if (y !== x) moved++;
+  }
+  assert.ok(moved > 30);
+  assert.equal(b.voice.algorithm, a.voice.algorithm);
+});

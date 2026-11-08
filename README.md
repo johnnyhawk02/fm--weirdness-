@@ -22,6 +22,7 @@ with no DOM use, ready to port to C++/JUCE.
   clocks, jump sets, gate row and modulators, and gives the patch a new generated name. RND ALL respects the locks.
 - On phones (under 760px wide, e.g. Pixel 9a portrait) everything fits one screen with no scrolling: tabs A B C D
   (one operator each), VOICE, LFO and RND. The top bar (start, randomise, name, master saw) is always visible.
+- ALTER (or the A key) nudges every continuous setting a tiny amount (levels, decays, pans, LFOs, rates, step depths and chances, a few cents of fine tune) and leaves the algorithm, ratios and patterns alone. Undo works.
 - Seven operators, A to G, with 32 seven-operator algorithms (◂ ▸ or ALL to pick); feedback is on G.
 - Stereo: every carrier is a left/right pair. Each operator's pan sets which side of the pair it modulates
   (a modulator panned left bends only the left carrier), and for carriers it is their placement. On top, the

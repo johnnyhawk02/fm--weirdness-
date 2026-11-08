@@ -270,3 +270,35 @@ export function randomizeEverything(patch, rng) {
   patch.clock.gate = patch.clock.gate.map((_, k) => k === 0 || rng.next() < 0.4);
   patch.rnd.algoChance = round4(rng.next() < 0.5 ? 0 : rng.range(0, 0.3));
 }
+
+// ---------- alter ----------
+// Nudge every continuous value a little: amount is the typical move as a fraction of each parameter's range
+// (log-scaled for log parameters). Choices, step counts, ratios and clock multipliers stay as they are, so the
+// sound keeps its character; operator pitch only moves by a few cents through 'fine'. Output level is left alone.
+export function alterEverything(patch, rng, amount = 0.03) {
+  const nudge = () => (rng.next() + rng.next() - 1) * 2 * amount; // triangular, -2a..2a, mostly small
+  for (const spec of PARAM_SPECS) {
+    if (spec.nornd || (spec.type !== 'lin' && spec.type !== 'log')) continue;
+    const cur = getPath(patch, spec.path);
+    if (typeof cur !== 'number' || !isFinite(cur)) continue;
+    let v;
+    if (spec.type === 'log') {
+      const lr = Math.log(spec.max) - Math.log(spec.min);
+      v = Math.exp(Math.log(Math.max(spec.min, cur)) + nudge() * lr * 0.5);
+    } else {
+      const d = spec.path.endsWith('.fine') ? 0.1 : 1; // keep pitch moves to a few cents
+      v = cur + nudge() * (spec.max - spec.min) * 0.5 * d;
+    }
+    setPath(patch, spec.path, round4(Math.max(spec.min, Math.min(spec.max, v))));
+  }
+  for (const op of patch.ops) {
+    for (const st of op.steps) {
+      if (st.depth !== 0) {
+        const s = Math.sign(st.depth);
+        st.depth = round4(s * Math.max(0.05, Math.min(1, Math.abs(st.depth) + nudge())));
+      }
+      if (st.prob < 1) st.prob = round4(Math.max(0.05, Math.min(1, st.prob + nudge())));
+      if (st.ratchetProb < 1) st.ratchetProb = round4(Math.max(0.05, Math.min(1, st.ratchetProb + nudge())));
+    }
+  }
+}
