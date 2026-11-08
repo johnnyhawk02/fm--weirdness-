@@ -113,6 +113,13 @@ canvas { display: block; }
 #pitch { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
 #app.pitch-open #ops { display: none; }
 #app.pitch-open #pitch { display: flex; }
+.mainops { display: grid; grid-template-columns: repeat(7, 1fr); flex: none; }
+.mainop { display: flex; justify-content: center; gap: 2px; }
+.mainrow { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: flex-end; flex: none; }
+.fbpath { display: flex; align-items: flex-end; gap: 4px; }
+.fbpath > .lbl { align-self: center; }
+.fbpath .arrow { align-self: center; font-weight: 700; }
+.fbpath .val { width: 22px; text-align: center; align-self: center; }
 .faders { flex: 1; min-height: 200px; width: 100%; touch-action: none; cursor: ns-resize; }
 #pitchbtn { width: 56px; height: 44px; line-height: 42px; font-size: 11px; font-weight: 700; }
 #pitchbtn.on { background: var(--spot); border-color: var(--spot); color: var(--bg); }
@@ -176,6 +183,9 @@ canvas { display: block; }
   #pitch { display: flex; flex: 1; }
   #pitch.pane-off { display: none; }
   .faders { min-height: 0; }
+  .desk-only { display: none; }
+  .mainrow { gap: 4px 10px; }
+  .mainop { flex-direction: column; align-items: center; gap: 0; }
   .phone-only.pane-off { display: none !important; }
   .presetspanel { flex: 1 !important; min-height: 0; flex-direction: column; gap: 6px; }
   .presetspanel .btn { height: 34px; line-height: 32px; font-size: 11px; padding: 0 10px; }

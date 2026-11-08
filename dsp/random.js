@@ -209,7 +209,7 @@ export function rndAll(patch, locks, amount, rng) {
 const LOG_KEYS = new Set(['ratio', 'attack', 'decay', 'fixedHz', 'hz', 'pitchEnvDecay', 'rate', 'mult']);
 const LIN_KEYS = new Set(['fine', 'level', 'seqAmount', 'destRange', 'drift', 'jitter', 'scatter', 'jumpChance',
   'depth', 'prob', 'ratchetProb', 'skip', 'repeat', 'pitchEnvSemis', 'pan', 'feedback', 'bpm', 'smooth',
-  'algoChance', 'amount', 'lockDensity']);
+  'algoChance', 'amount', 'lockDensity', 'fb', 'amt', 'width']);
 const ROUND_KEYS = new Set(['note']);
 
 export function morphPatches(a, b, x) {
@@ -247,6 +247,9 @@ export function randomizeEverything(patch, rng) {
   patch.rnd.style = rng.int(FILL_STYLES.length);
   patch.rnd.lockDensity = round4(rng.range(0, 0.4));
   patch.voice.pitchSlew = randomSlew(rng);
+  // feedback: a few operators feed back on themselves, and each cross path is on about 60% of the time
+  for (let i = 0; i < NUM_OPS - 1; i++) if (rng.next() < 0.65) patch.ops[i].fb = 0;
+  for (const q of patch.voice.paths) if (rng.next() < 0.4) q.amt = 0; else if (q.from === q.to) q.to = (q.to + 1 + rng.int(NUM_OPS - 1)) % NUM_OPS;
   patch.voice.pitchEnvSemis = round4(rng.next() < 0.5 ? rng.range(-24, 24) : rng.range(-4, 4));
   for (let i = 0; i < NUM_OPS; i++) {
     const op = patch.ops[i];

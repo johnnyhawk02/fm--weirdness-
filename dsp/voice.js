@@ -1,11 +1,11 @@
-// One 4-operator phase-modulation voice. Plain JS, no allocation in the audio path.
+// One seven-operator phase-modulation voice. Plain JS, no allocation in the audio path.
 import { ALGORITHMS, NUM_OPS } from './params.js';
 
-const FB_OP = NUM_OPS - 1; // feedback lives on the last operator
 
 const TWO_PI = Math.PI * 2;
 const MOD_INDEX = 0.6;   // phase deviation (cycles) of a modulator at level 1 (~3.8 rad)
-const FB_SCALE = 0.3;    // feedback deviation (cycles) at |feedback| = 1
+const FB_SCALE = 0.3;    // self-feedback deviation (cycles) at |feedback| = 1
+const PATH_SCALE = 0.5;  // cross-feedback path deviation (cycles) per unit of source output at amount 1
 const AA_CORNER = 5000;  // Hz: modulation index halves when the modulated op reaches this
 
 export class Voice {
@@ -15,7 +15,8 @@ export class Voice {
     this.env = new Float64Array(NUM_OPS);      // envelope value 0..1
     this.stage = new Uint8Array(NUM_OPS);      // 0 attack, 1 decay
     this.out = new Float64Array(NUM_OPS);      // last operator outputs (scaled)
-    this.fb1 = 0; this.fb2 = 0;
+    this.fb1 = new Float64Array(NUM_OPS); this.fb2 = new Float64Array(NUM_OPS); // self-feedback history per op
+    this.pathPm = new Float64Array(NUM_OPS);
     this.pitchEnv = 0;                   // 1 -> 0 decaying pitch envelope
     this.algorithm = 0;
     this.l = 0; this.r = 0;
@@ -24,7 +25,7 @@ export class Voice {
 
   copyFrom(v) {
     this.phase.set(v.phase); this.outL.set(v.outL); this.outR.set(v.outR); this.env.set(v.env); this.stage.set(v.stage); this.out.set(v.out);
-    this.fb1 = v.fb1; this.fb2 = v.fb2; this.pitchEnv = v.pitchEnv; this.algorithm = v.algorithm;
+    this.fb1.set(v.fb1); this.fb2.set(v.fb2); this.pitchEnv = v.pitchEnv; this.algorithm = v.algorithm;
   }
 
   // keep: bitmask of free-running operators whose envelopes ignore the note trigger
@@ -34,7 +35,7 @@ export class Voice {
       this.phase[j] = 0; this.out[j] = 0;
       if (!(keep & (1 << j))) { this.env[j] = 0; this.stage[j] = 0; }
     }
-    this.fb1 = this.fb2 = 0;
+    this.fb1.fill(0); this.fb2.fill(0);
     this.pitchEnv = 1;
     this.subOffset = offsetSamples;
   }
@@ -42,10 +43,12 @@ export class Voice {
   // Retrigger one operator's envelope without a jump: the attack rises from where it is now.
   retrigOp(j) { this.stage[j] = 0; }
 
-  // freq[4]: Hz per op before the pitch envelope. gain[4]: level * seq gain per op. attInc[4]: env increment per sample.
-  // decCoef[4]: per-sample decay multiplier. feedback: -1..1.
+  // freq: Hz per op before the pitch envelope. gain: level * seq gain per op. attInc: env increment per sample.
+  // decCoef: per-sample decay multiplier. fb: self-feedback per op, -1..1 (negative = squared, noisier).
+  // paths: cross-feedback routes as [from, to, amount] triples; a route reads the source's latest output
+  // (one sample old when the source renders after the target), so any operator can feed any other, carriers included.
   // pitchSemis: pitch-envelope depth. pitchCoef: pitch env decay multiplier per sample.
-  render(freq, gain, attInc, decCoef, feedback, pitchSemis, pitchCoef, panL, panR, balL, balR) {
+  render(freq, gain, attInc, decCoef, fb, paths, pitchSemis, pitchCoef, panL, panR, balL, balR) {
     const alg = ALGORITHMS[this.algorithm];
     const sr = this.sr;
     const pe = pitchSemis * this.pitchEnv;
@@ -54,6 +57,13 @@ export class Voice {
     const fmax = sr * 0.45;
     const off = this.subOffset || 0;
     this.subOffset = 0;
+    const ppm = this.pathPm;
+    for (let j = NUM_OPS - 1; j >= 0; j--) {
+      // cross-feedback, gathered before op j renders
+      let x = 0;
+      for (let k = 0; k < paths.length; k += 3) if (paths[k + 1] === j && paths[k + 2] !== 0) x += paths[k + 2] * this.out[paths[k]];
+      ppm[j] = x * PATH_SCALE;
+    }
     for (let j = NUM_OPS - 1; j >= 0; j--) {
       // envelope
       let e = this.env[j];
@@ -86,20 +96,22 @@ export class Voice {
           pm *= idx;
         }
       }
-      if (j === FB_OP && feedback !== 0) {
-        const h = 0.5 * (this.fb1 + this.fb2);
-        const fbv = (feedback > 0 ? feedback * h : -feedback * h * h) * FB_SCALE * e;
-        pm += fbv; pmL += fbv; pmR += fbv;
+      const fj = fb[j];
+      let fbv = ppm[j];
+      if (fj !== 0) {
+        const h = 0.5 * (this.fb1[j] + this.fb2[j]);
+        fbv += (fj > 0 ? fj * h : -fj * h * h) * FB_SCALE * e;
       }
+      if (fbv !== 0) { pm += fbv; pmL += fbv; pmR += fbv; }
       const amp = gain[j] * e;
       if (carrier) {
         const sL = Math.sin(TWO_PI * (ph + pmL)), sR = pmL === pmR ? sL : Math.sin(TWO_PI * (ph + pmR));
-        if (j === FB_OP) { this.fb2 = this.fb1; this.fb1 = 0.5 * (sL + sR); }
+        this.fb2[j] = this.fb1[j]; this.fb1[j] = 0.5 * (sL + sR);
         this.outL[j] = sL * amp; this.outR[j] = sR * amp;
         this.out[j] = 0.5 * (sL + sR) * amp;
       } else {
         const s = Math.sin(TWO_PI * (ph + pm));
-        if (j === FB_OP) { this.fb2 = this.fb1; this.fb1 = s; }
+        this.fb2[j] = this.fb1[j]; this.fb1[j] = s;
         this.out[j] = s * amp;
       }
     }

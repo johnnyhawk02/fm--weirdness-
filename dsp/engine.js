@@ -66,6 +66,7 @@ export class Engine {
     this.rateMod = new Float64Array(NUM_OPS);
     this.effHz = new Float64Array(NUM_OPS);     // free clock rate after LFO modulation
     this.dirtyOps = new Array(NUM_OPS).fill(false);
+    this.fbOp = new Float64Array(NUM_OPS); this.fbWork = new Float64Array(NUM_OPS); this.paths = new Float64Array(6); this._z6 = new Float64Array(NUM_OPS);
     this._z0 = new Float64Array(NUM_OPS); this._z1 = new Float64Array(NUM_OPS); this._z2 = new Float64Array(NUM_OPS);
     this._z3 = new Float64Array(NUM_OPS); this._z4 = new Float64Array(NUM_OPS); this._z5 = new Float64Array(NUM_OPS);
     this.dirtyVoice = false;
@@ -140,8 +141,8 @@ export class Engine {
     const dt = CTRL / sr;
 
     // random-walk modulators
-    let mPitch = 0, mFb = 0, mAlgo = 0, mPan = 0, mClock = 0, mWidth = 0;
-    const mPanOp = this._z5.fill(0), mLevel = this._z0.fill(0), mRatio = this._z1.fill(0), mDecay = this._z2.fill(0), mSeq = this._z3.fill(0), mRate = this._z4.fill(0);
+    let mPitch = 0, mFb = 0, mP1 = 0, mP2 = 0, mAlgo = 0, mPan = 0, mClock = 0, mWidth = 0;
+    const mFbOp = this._z6.fill(0), mPanOp = this._z5.fill(0), mLevel = this._z0.fill(0), mRatio = this._z1.fill(0), mDecay = this._z2.fill(0), mSeq = this._z3.fill(0), mRate = this._z4.fill(0);
     for (let m = 0; m < 4; m++) {
       const md = p.mods[m];
       const rate = Math.max(0.005, md.rate);
@@ -172,6 +173,8 @@ export class Engine {
       const t = md.target;
       if (t === 'pitch') mPitch += x;
       else if (t === 'feedback') mFb += x;
+      else if (t === 'fb1') mP1 += x;
+      else if (t === 'fb2') mP2 += x;
       else if (t === 'algorithm') mAlgo += x;
       else if (t === 'pan') mPan += x;
       else if (t === 'clock') mClock += x;
@@ -184,6 +187,7 @@ export class Engine {
         else if (key === 'seqAmount') mSeq[oi] += x;
         else if (key === 'rate') mRate[oi] += x;
         else if (key === 'pan') mPanOp[oi] += x;
+        else if (key === 'fb') mFbOp[oi] += x;
       }
     }
 
@@ -206,7 +210,15 @@ export class Engine {
     // voice
     const baseHz = v.pitchMode === 'hz' ? v.hz : noteToHz(v.note);
     this.voiceHz = baseHz * Math.pow(2, mPitch);          // depth 1 = +-1 octave
-    this.fbEff = clamp(v.feedback + mFb, -1, 1);
+    this.fbEff = clamp(v.feedback + mFb + mFbOp[NUM_OPS - 1], -1, 1);
+    for (let i = 0; i < NUM_OPS - 1; i++) this.fbOp[i] = clamp((p.ops[i].fb || 0) + mFbOp[i], -1, 1);
+    this.fbOp[NUM_OPS - 1] = this.fbEff;
+    const ps = v.paths || [], pm = [mP1, mP2];
+    for (let k = 0; k < 2; k++) {
+      const q = ps[k];
+      this.paths[k * 3] = q ? q.from | 0 : 0; this.paths[k * 3 + 1] = q ? q.to | 0 : 0;
+      this.paths[k * 3 + 2] = q ? clamp(q.amt + pm[k], -1, 1) : 0;
+    }
     this.pitchSemis = v.pitchEnvSemis;
     this.pitchCoef = Math.exp(-1 / (Math.max(0.001, v.pitchEnvDecay) * sr));
     const NA = ALGORITHMS.length;
@@ -419,7 +431,7 @@ export class Engine {
       }
 
       // per-operator inputs
-      let fb = this.fbEff;
+      const fb = this.fbWork; fb.set(this.fbOp);
       for (let i = 0; i < NUM_OPS; i++) {
         const op = ops[i], sq = seqs[i];
         const m = sq.value(this.sPhase[i]);
@@ -443,7 +455,7 @@ export class Engine {
           base = this.voiceHz * ratio * fmul;
         }
         this.freq[i] = base;
-        if (sq.lockFeedback != null) fb = sq.lockFeedback;
+        if (sq.lockFeedback != null) fb[i] = sq.lockFeedback;
       }
       const dc = this.dcWork;
       for (let i = 0; i < NUM_OPS; i++) {
@@ -453,12 +465,12 @@ export class Engine {
       }
 
       const vc = this.voice;
-      vc.render(this.freq, this.gain, this.attInc, dc, fb, this.pitchSemis, this.pitchCoef, this.cPanL, this.cPanR, this.balL, this.balR);
+      vc.render(this.freq, this.gain, this.attInc, dc, fb, this.paths, this.pitchSemis, this.pitchCoef, this.cPanL, this.cPanR, this.balL, this.balR);
       let l = vc.l, r = vc.r;
       if (this.fadePos < this.fadeLen) {
         const x = this.fadePos / this.fadeLen;
         const t = this.tail;
-        t.render(this.freq, this.gain, this.attInc, dc, fb, this.pitchSemis, this.pitchCoef, this.cPanL, this.cPanR, this.balL, this.balR);
+        t.render(this.freq, this.gain, this.attInc, dc, fb, this.paths, this.pitchSemis, this.pitchCoef, this.cPanL, this.cPanR, this.balL, this.balR);
         l = l * x + t.l * (1 - x); r = r * x + t.r * (1 - x);
         this.fadePos++;
       }

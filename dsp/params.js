@@ -60,8 +60,8 @@ export const DESTS = ['level', 'ratio', 'pitch'];
 export const FILL_STYLES = ['uniform', 'drunk', 'sparse', 'cluster', 'euclid'];
 export const LOCK_KEYS = ['ratio', 'decay', 'feedback', 'shape'];
 export const MOD_TARGETS = [
-  'off', 'pitch', 'feedback', 'algorithm', 'pan', 'width', 'clock',
-  ...['pan', 'rate', 'level', 'ratio', 'decay', 'seqAmount'].flatMap((k) => ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((o) => `${o}.${k}`)),
+  'off', 'pitch', 'feedback', 'fb1', 'fb2', 'algorithm', 'pan', 'width', 'clock',
+  ...['pan', 'rate', 'level', 'ratio', 'decay', 'seqAmount', 'fb'].flatMap((k) => ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((o) => `${o}.${k}`)),
 ];
 
 export function multLabel(m) {
@@ -89,7 +89,7 @@ function makeOp(i) {
   for (let s = 0; s < MAX_STEPS; s++) steps.push(makeStep());
   return {
     // FM
-    ratioMode: 'ratio', ratio: ratios[i], fine: 0, fixedHz: 440,
+    ratioMode: 'ratio', ratio: ratios[i], fine: 0, fixedHz: 440, fb: 0, // fb: self-feedback (G uses voice.feedback)
     level: levels[i], attack: 0.002,
     decay: [3, 0.8, 2.5, 2, 3, 0.6, 1.2][i],
     pan: [0, -0.8, 0.8, 0, 0, -0.5, 0.6][i], // modulators: which side of the carrier pair they modulate; carriers: placement
@@ -113,6 +113,8 @@ export function defaultPatch() {
       level: 0.8, pan: 0, algorithm: 1, feedback: 0.2,
       pitchSlew: 0.4, // seconds: operator pitch glide time
       stereo: 0, width: 0.8, rotate: 0.15, // carrier placement: mode, width 0..1, rotate speed (Hz)
+      // cross-feedback paths: any operator's output bends any other's phase (G self-feedback is voice.feedback)
+      paths: [{ from: 0, to: 6, amt: 0 }, { from: 2, to: 1, amt: 0 }],
     },
     clock: {
       mode: 'bpm', bpm: 120, beats: 1, hz: 0.5,
@@ -163,6 +165,7 @@ for (let i = 0; i < NUM_OPS; i++) {
     { path: o + 'decay', section: 'voice', type: 'log', min: 0.01, max: 8, def: 0.5 },
     { path: o + 'fixedHz', section: 'voice', type: 'log', min: 20, max: 8000, def: 440 },
     { path: o + 'pan', section: 'voice', type: 'lin', min: -1, max: 1, def: 0 },
+    ...(i < NUM_OPS - 1 ? [{ path: o + 'fb', section: 'voice', type: 'lin', min: -1, max: 1, def: 0, rndScale: 0.5 }] : []),
     { path: o + 'amp', section: 'voice', type: 'choice', n: 6, def: 0, rndWeights: [6, 2, 1, 1, 1, 1] },
     { path: o + 'seqAmount', section: 'seq', type: 'lin', min: 0, max: 1, def: 1 },
     { path: o + 'dest', section: 'seq', type: 'choice', n: 3, def: 0, rndWeights: [6, 2, 2] },
@@ -196,6 +199,11 @@ export const PARAM_SPECS = [
   { path: 'voice.rotate', section: 'voice', type: 'log', min: 0.01, max: 8, def: 0.15, rndMax: 2 },
   { path: 'voice.pitchSlew', section: 'voice', type: 'log', min: 0.001, max: 8, def: 0.4, rndMax: 2 },
   { path: 'voice.feedback', section: 'voice', type: 'lin', min: -1, max: 1, def: 0 },
+  ...[0, 1].flatMap((k) => [
+    { path: `voice.paths.${k}.from`, section: 'voice', type: 'choice', n: NUM_OPS, def: 0 },
+    { path: `voice.paths.${k}.to`, section: 'voice', type: 'choice', n: NUM_OPS, def: 6 },
+    { path: `voice.paths.${k}.amt`, section: 'voice', type: 'lin', min: -1, max: 1, def: 0, rndScale: 0.6 },
+  ]),
   { path: 'clock.bpm', section: 'clocks', type: 'int', min: 10, max: 999, def: 120, rndMin: 70, rndMax: 180 },
   { path: 'clock.beats', section: 'clocks', type: 'int', min: 1, max: 16, def: 4, rndMax: 8 },
   { path: 'clock.hz', section: 'clocks', type: 'log', min: 0.01, max: 50, def: 0.5, rndMax: 4 },

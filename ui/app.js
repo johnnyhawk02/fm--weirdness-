@@ -29,6 +29,8 @@ function upgrade(p) {
   }
   if (p.voice.stereo == null) { p.voice.stereo = 0; p.voice.width = 0.8; p.voice.rotate = 0.15; }
   if (p.voice.pitchSlew == null) p.voice.pitchSlew = 0.4;
+  if (!Array.isArray(p.voice.paths)) p.voice.paths = [{ from: 0, to: 6, amt: 0 }, { from: 2, to: 1, amt: 0 }];
+  for (const op of p.ops || []) if (op.fb == null) op.fb = 0;
   for (const o of p.ops) if (o.pan == null) o.pan = 0;
   for (const o of p.ops) { if (o.amp == null) o.amp = 0; if (o.clock == null) o.clock = 0; if (o.hz == null) o.hz = 2; }
   return p;
@@ -183,7 +185,8 @@ const bigRnd = button(top, 'RANDOMISE', () => randomiseAll(), 'randomise everyth
 bigRnd.id = 'bigrnd';
 const alterBtn = button(top, 'ALTER', () => alterAll(), 'nudge every setting a tiny amount, keeping the sound (A)');
 alterBtn.id = 'alter';
-const pitchBtn = button(top, 'PITCH', () => { document.getElementById('app').classList.toggle('pitch-open'); refreshAll(); }, 'operator pitch faders');
+const pitchBtn = button(top, 'MAIN', () => { const on = document.getElementById('app').classList.toggle('pitch-open'); store.set('main', on); refreshAll(); }, 'main page: pitch faders, levels, feedback paths (M)');
+if (store.get('main') !== false) document.getElementById('app').classList.add('pitch-open');
 pitchBtn.id = 'pitchbtn';
 ctx.register(() => pitchBtn.classList.toggle('on', document.getElementById('app').classList.contains('pitch-open')));
 ctx.register(() => { startBtn.textContent = ui.running ? 'STOP' : 'START'; startBtn.classList.toggle('spot', ui.running); });
@@ -249,7 +252,6 @@ const algoEls = ALGORITHMS.map((a, i) => {
 ctx.register(() => algoEls.forEach((b, i) => b.classList.toggle('base', i === patch.voice.algorithm)));
 el('div', 'sep', top);
 const outG = group(top, 'out');
-knob(ctx, outG, { path: 'voice.feedback', label: 'fb G' });
 const stc = el('div', 'col', outG);
 selector(ctx, stc, { path: 'voice.stereo', labels: STEREO_MODES, label: 'stereo', width: 46 });
 knob(ctx, outG, { path: 'voice.width', label: 'width' });
@@ -318,6 +320,7 @@ function buildOp(i) {
   knob(ctx, kg, { path: o + 'attack', label: 'att', fmt: ms });
   knob(ctx, kg, { path: o + 'decay', label: 'dec', fmt: ms });
   knob(ctx, kg, { path: o + 'seqAmount', label: 'seq amt' });
+  knob(ctx, kg, { path: i === NUM_OPS - 1 ? 'voice.feedback' : o + 'fb', label: 'fb' }).title = 'self-feedback: the operator modulates itself (negative = noisier)';
 
   // step strip
   const sw = el('div', 'stripwrap', row);
@@ -690,7 +693,7 @@ ctx.register(() => gateEls.forEach((g, k) => { g.classList.toggle('on', !!patch.
 const pitchEl = document.getElementById('pitch');
 pitchEl.classList.add('panel');
 const ph = el('div', 'row', pitchEl); ph.style.alignItems = 'flex-end'; ph.style.gap = '8px';
-el('div', 'title', ph, 'operator pitch');
+el('div', 'title', ph, 'main');
 knob(ctx, ph, { path: 'voice.pitchSlew', label: 'slew', fmt: (v) => (v < 1 ? (v * 1000).toFixed(0) + 'ms' : v.toFixed(2) + 's') });
 ui.pitchSnap = false;
 const snapT = el('div', 'tog off', ph, 'snap');
@@ -707,9 +710,33 @@ button(ph, 'rnd', () => {
   }
   changed(true);
 }, 'randomise operator pitches and the slew time');
-const pHint = el('div', 'val', ph, 'drag a fader · the orange line is the gliding pitch · dbl-tap resets');
+const pHint = el('div', 'val', ph, 'faders: operator pitch · orange line: the gliding pitch · dbl-tap resets');
+pHint.classList.add('desk-only');
 pHint.style.color = C.mid; pHint.style.whiteSpace = 'normal';
 const faders = hiCanvas(pitchEl, 'faders');
+// under each fader: that operator's level and self-feedback
+const mainOps = el('div', 'mainops', pitchEl);
+for (let i = 0; i < NUM_OPS; i++) {
+  const c = el('div', 'mainop', mainOps);
+  knob(ctx, c, { path: `ops.${i}.level`, label: () => (ALGORITHMS[patch.voice.algorithm].carriers.includes(i) ? 'level' : 'index') });
+  knob(ctx, c, { path: i === NUM_OPS - 1 ? 'voice.feedback' : `ops.${i}.fb`, label: 'fb' });
+}
+// cross-feedback paths and the algorithm, all on one row
+const mainRow = el('div', 'mainrow', pitchEl);
+for (let k = 0; k < 2; k++) {
+  const pg = el('div', 'fbpath', mainRow);
+  el('div', 'lbl', pg, 'path ' + (k + 1));
+  selector(ctx, pg, { path: `voice.paths.${k}.from`, labels: OP_NAMES, width: 22 });
+  el('div', 'arrow', pg, '→');
+  selector(ctx, pg, { path: `voice.paths.${k}.to`, labels: OP_NAMES, width: 22 });
+  knob(ctx, pg, { path: `voice.paths.${k}.amt`, label: 'amt' });
+}
+const ma = el('div', 'fbpath', mainRow);
+el('div', 'lbl', ma, 'alg');
+button(ma, '◂', () => { ctx.beginEdit(); patch.voice.algorithm = (patch.voice.algorithm + 31) % 32; changed(true); });
+const maN = el('div', 'val', ma, '');
+button(ma, '▸', () => { ctx.beginEdit(); patch.voice.algorithm = (patch.voice.algorithm + 1) % 32; changed(true); });
+ctx.register(() => { maN.textContent = String(patch.voice.algorithm + 1); });
 const RATIO_SPEC = { type: 'log', min: 0.5, max: 16 }, HZ_SPEC = { type: 'log', min: 20, max: 8000 };
 function faderSpec(i) { return patch.ops[i].ratioMode === 'fixed' ? HZ_SPEC : RATIO_SPEC; }
 function faderGeom() {
@@ -794,8 +821,8 @@ function drawFaders() {
 // ---------------- phone tabs ----------------
 for (const g of [voiceG, algoG, outG]) g.parentElement.dataset.pane = 'voice';
 const tabsEl = document.getElementById('tabs');
-const TABS = [...OP_NAMES.map((n) => [n, n]), ['voice', 'VOICE'], ['lfo', 'LFO'], ['rnd', 'RND'], ['presets', 'PRESETS'], ['pitch', 'PITCH']];
-ui.tab = store.get('tab') || 'A';
+const TABS = [...OP_NAMES.map((n) => [n, n]), ['pitch', 'MAIN'], ['voice', 'VOICE'], ['lfo', 'LFO'], ['rnd', 'RND'], ['presets', 'PRESETS']];
+ui.tab = store.get('tab2') || 'pitch';
 const tabRows = [el('div', 'tabrow', tabsEl), el('div', 'tabrow', tabsEl)];
 const tabEls = TABS.map(([id, text], k) => {
   const b = button(tabRows[k < NUM_OPS ? 0 : 1], text, () => setTab(id));
@@ -804,7 +831,7 @@ const tabEls = TABS.map(([id, text], k) => {
 });
 function setTab(id) {
   ui.tab = id;
-  store.set('tab', id);
+  store.set('tab2', id);
   document.querySelectorAll('[data-pane]').forEach((n) => n.classList.toggle('pane-off', n.dataset.pane !== id));
   const isOp = OP_NAMES.includes(id);
   opsEl.classList.toggle('pane-off', !isOp);
@@ -1089,6 +1116,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') { e.preventDefault(); startStop(); }
   else if (e.key === 'r' && !e.ctrlKey && !e.metaKey) randomiseAll();
   else if (e.key === 'a' && !e.ctrlKey && !e.metaKey) alterAll();
+  else if (e.key === 'm' && !e.ctrlKey && !e.metaKey) pitchBtn.click();
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); savePreset(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }

@@ -170,3 +170,20 @@ test('alter nudges values slightly and keeps them in range', async () => {
   assert.ok(moved > 30);
   assert.equal(b.voice.algorithm, a.voice.algorithm);
 });
+
+test('feedback paths: every route at full amount stays finite and under 0 dBFS, and changes the sound', () => {
+  const base = defaultPatch();
+  const ref = renderPatch(base, 1, SR).L;
+  for (let from = 0; from < 7; from++) for (let to = 0; to < 7; to++) {
+    const p = clonePatch(base);
+    p.voice.paths[0] = { from, to, amt: (from + to) % 2 ? 1 : -1 };
+    p.voice.paths[1] = { from: to, to: from, amt: 0.7 };
+    for (const op of p.ops) op.fb = from === to ? -1 : 0.6;
+    const { L, R } = renderPatch(p, 1, SR);
+    check(L, R, `path ${from}->${to}`);
+    if (from === 0 && to === 1) {
+      let d = 0; for (let i = 0; i < L.length; i++) d += Math.abs(L[i] - ref[i]);
+      assert.ok(d / L.length > 1e-3, 'path changes the output');
+    }
+  }
+});
