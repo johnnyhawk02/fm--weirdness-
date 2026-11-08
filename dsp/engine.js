@@ -54,6 +54,7 @@ export class Engine {
     this.modPhase = new Float64Array(4);
     this.effMult = new Float64Array(4);   // multiplier after LFO rate modulation
     this.rateMod = new Float64Array(4);
+    this.effHz = new Float64Array(4);     // free clock rate after LFO modulation
     this.dirtyOps = [false, false, false, false];
     this.dirtyVoice = false;
     this.onWrap = null;        // (op, sampleIndex, subSampleOffset, isReset)
@@ -69,7 +70,7 @@ export class Engine {
     if (old && this.cycle >= 0) {
       for (let i = 0; i < 4; i++) {
         const o = old.ops[i], n = p.ops[i];
-        if (n.sync && !o.sync) { // joining sync: line up at the current master position
+        if (n.sync && n.clock !== 1 && !(o.sync && o.clock !== 1)) { // joining sync: line up at the current master position
           const pos = (this.cycle - this.sResetCycle[i]) + this.mPhase;
           this.sBaseOff[i] = this.sPhase[i] + this.sK[i];
           this.sBasePos[i] = pos;
@@ -180,6 +181,7 @@ export class Engine {
       const op = p.ops[i];
       this.rateMod[i] = mRate[i];
       const em = Math.min(256, Math.max(1 / 256, op.mult * (mRate[i] !== 0 ? Math.pow(2, mRate[i] * 3) : 1)));
+      this.effHz[i] = Math.min(400, Math.max(0.001, (op.hz || 1) * (mRate[i] !== 0 ? Math.pow(2, mRate[i] * 3) : 1)));
       if (em !== this.effMult[i]) {
         if (op.sync && this.cycle >= 0) this._rebase(i);
         this.effMult[i] = em;
@@ -208,7 +210,7 @@ export class Engine {
       this.attInc[i] = 1 / (Math.max(0.0002, op.attack) * sr);
       this.seqAmtEff[i] = clamp(op.seqAmount + mSeq[i], 0, 1);
       // drift: slow random walk on free-running slave rate
-      if (op.drift > 0 && !op.sync) {
+      if (op.drift > 0 && (op.clock === 1 || !op.sync)) {
         if (this.rngDrift[i].next() < dt * 2) this.driftTarget[i] = this.rngDrift[i].bipolar();
         this.drift[i] += (this.driftTarget[i] - this.drift[i]) * (1 - Math.exp(-dt / 0.8));
       } else {
@@ -227,7 +229,9 @@ export class Engine {
 
   _trigger(offset) {
     this.tail.copyFrom(this.voice);
-    this.voice.trigger(offset);
+    let keep = 0;
+    for (let i = 0; i < 4; i++) if (this.patch.ops[i].clock === 1) keep |= 1 << i;
+    this.voice.trigger(offset, keep);
     this.fadePos = 0;
     this.fadeLen = RETRIGGER_FADE;
     if (this.onTrigger) this.onTrigger(this.sample);
@@ -264,7 +268,7 @@ export class Engine {
       const op = p.ops[i];
       // multiplier jump
       const rj = r.next(), rs = r.next();
-      if (op.jumpChance > 0 && rj < op.jumpChance && op.jumpSet.length) {
+      if (op.clock !== 1 && op.jumpChance > 0 && rj < op.jumpChance && op.jumpSet.length) {
         const nm = MULT_PRESETS[op.jumpSet[Math.floor(rs * op.jumpSet.length)]];
         if (nm !== op.mult) {
           if (op.sync) this._rebase(i); // phase stays continuous
@@ -310,7 +314,8 @@ export class Engine {
       for (let i = 0; i < 4; i++) {
         const op = ops[i];
         let wrapped = false, isReset = false, off = 0;
-        if (op.sync) {
+        const free = op.clock === 1;
+        if (!free && op.sync) {
           if (masterWrapped && (this.cycle % Math.max(1, op.syncEvery) === 0 || !seqs[i].started)) {
             this.sResetCycle[i] = this.cycle;
             this.sBasePos[i] = 0;
@@ -330,7 +335,7 @@ export class Engine {
           if (masterWrapped && !seqs[i].started) {
             this.sPhase[i] = 0; isReset = true; wrapped = true;
           } else {
-            const inc = this.mInc * this.effMult[i] * (1 + op.drift * this.drift[i]);
+            const inc = (free ? this.effHz[i] / this.sr : this.mInc * this.effMult[i]) * (1 + op.drift * this.drift[i]);
             let ph = this.sPhase[i] + inc;
             if (ph >= 1) {
               ph -= Math.floor(ph);
@@ -343,6 +348,8 @@ export class Engine {
         if (wrapped) {
           const sq = seqs[i];
           sq.advance(op, isReset);
+          // a free sequencer is its own voice part: each fired step retriggers its operator envelope
+          if (free && sq.fired && !isReset) this.voice.retrigOp(i);
           this.lockDecCoef[i] = sq.lockDecay != null ? decayCoef(sq.lockDecay, this.sr) : 0;
           if (this.onWrap) this.onWrap(i, this.sample, off, isReset);
         }
@@ -420,7 +427,7 @@ export class Engine {
       arr[b] = this.sPhase[i];
       arr[b + 1] = this.seqs[i].pos;
       arr[b + 2] = this.seqs[i].fired ? 1 : 0;
-      arr[b + 3] = this.effMult[i];
+      arr[b + 3] = this.patch.ops[i].clock === 1 ? this.effHz[i] : this.effMult[i];
       arr[b + 4] = this.sValue[i];
     }
     for (let m = 0; m < 4; m++) arr[23 + m] = this.modVal[m];

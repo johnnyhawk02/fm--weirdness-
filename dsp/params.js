@@ -67,6 +67,7 @@ function makeOp(i) {
     length: [8, 16, 12, 6][i], steps, seqAmount: i === 0 ? 0.3 : 1, dest: 0, destRange: 0.5,
     mutateEvery: 2, mutateK: 0,
     // clock
+    clock: 1, hz: [1.1, 5.3, 3.7, 2.15][i], // 0 = linked to the master saw (mult), 1 = free-running at hz steps/s
     mult: mults[i], sync: true, syncEvery: 4, drift: 0, jitter: 0, scatter: 0,
     direction: 0, jumpChance: 0, jumpSet: [7, 10, 11, 12],
   };
@@ -132,6 +133,8 @@ for (let i = 0; i < 4; i++) {
     { path: o + 'length', section: 'seq', type: 'int', min: 1, max: 16, def: 16, rndMin: 3 },
     { path: o + 'mutateEvery', section: 'seq', type: 'int', min: 1, max: 16, def: 2 },
     { path: o + 'mutateK', section: 'seq', type: 'int', min: 0, max: 8, def: 0, rndMax: 3 },
+    { path: o + 'clock', section: 'clocks', type: 'choice', n: 2, def: 1, rndWeights: [3, 7] },
+    { path: o + 'hz', section: 'clocks', type: 'log', min: 0.02, max: 64, def: 2, rndMin: 0.3, rndMax: 12 },
     { path: o + 'mult', section: 'clocks', type: 'mult', min: 1 / 64, max: 64, def: 1 },
     { path: o + 'sync', section: 'clocks', type: 'bool', def: true, rndBias: 0.7 },
     { path: o + 'syncEvery', section: 'clocks', type: 'int', min: 1, max: 16, def: 1, rndMax: 4 },

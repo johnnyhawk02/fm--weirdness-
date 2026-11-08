@@ -21,7 +21,11 @@ const store = {
 };
 const fresh = new URLSearchParams(location.search).has('fresh');
 let patch = (!fresh && store.get('patch')) || defaultPatch();
-function upgrade(p) { for (const m of p.mods) if (m.shape == null) m.shape = 0; for (const o of p.ops) if (o.amp == null) o.amp = 0; return p; }
+function upgrade(p) {
+  for (const m of p.mods) if (m.shape == null) m.shape = 0;
+  for (const o of p.ops) { if (o.amp == null) o.amp = 0; if (o.clock == null) o.clock = 0; if (o.hz == null) o.hz = 2; }
+  return p;
+}
 upgrade(patch);
 const ui = {
   seedLocked: false,
@@ -235,7 +239,7 @@ function buildOp(i) {
   el('div', 'letter', head, OP_NAMES[i]);
   const role = el('div', 'role', head, '');
   selector(ctx, head, { path: o + 'ratioMode', labels: ['ratio', 'fixed'], values: ['ratio', 'fixed'], width: 42 });
-  const ampSel = selector(ctx, head, { path: o + 'amp', labels: AMP_SOURCES.map((a) => 'amp ' + a), width: 42 });
+  const ampSel = selector(ctx, head, { path: o + 'amp', labels: AMP_SOURCES.map((a) => '~' + a), width: 42 });
   ampSel.title = 'amp source: env = note envelope, hold = steady level, lfo1-4 = level follows that LFO';
   const rr = el('div', 'row', head); rr.style.gap = '2px';
   button(rr, 'fm', () => rndSection('voice', i), 'randomise this operator\'s FM settings');
@@ -287,15 +291,22 @@ function buildOp(i) {
   // clock column
   const cc = el('div', 'col clockc', row);
   const r1 = el('div', 'row', cc); r1.style.alignItems = 'flex-end';
+  const ccol = el('div', 'col', r1);
+  el('div', 'lbl', ccol, 'clock');
+  const clkSel = selector(ctx, ccol, { path: o + 'clock', labels: ['link', 'free'], width: 34 });
+  clkSel.title = 'link: steps follow the master saw x mult · free: this sequencer runs on its own rate (hz), unlinked';
   const mcol = el('div', 'col', r1);
   el('div', 'lbl', mcol, 'mult');
   multSelector(mcol, i);
   const scol = el('div', 'col', r1);
   el('div', 'lbl', scol, 'sync');
   toggle(ctx, scol, { path: o + 'sync', text: 'sync' });
-  knob(ctx, r1, { path: o + 'mult', label: 'rate', fmt: (v) => multLabel(v) });
+  const isFree = () => patch.ops[i].clock === 1;
+  knob(ctx, r1, { path: () => (isFree() ? o + 'hz' : o + 'mult'), label: () => (isFree() ? 'hz' : 'rate'),
+    fmt: (v) => (isFree() ? (v < 10 ? v.toFixed(2) : v.toFixed(1)) : multLabel(v)) });
+  ctx.register(() => { mcol.style.opacity = scol.style.opacity = isFree() ? 0.3 : 1; });
   const sawc = el('div', 'col', r1);
-  const sawLbl = el('div', 'lbl', sawc, 'slave saw');
+  const sawLbl = el('div', 'lbl', sawc, 'step saw');
   const saw = hiCanvas(sawc, 'saw');
   const r2 = el('div', 'row', cc); r2.style.gap = '2px';
   knob(ctx, r2, { path: o + 'drift', label: 'drift', fmt: (v) => (v * 100).toFixed(1) + '%' });
@@ -644,7 +655,19 @@ function factoryPresets() {
   }
   return out;
 }
+const STORE_VERSION = 2; // 2: free-running sequencers, amp sources
 if (!Array.isArray(ui.presets) || !ui.presets.length) { ui.presets = factoryPresets(); store.set('presets', ui.presets); }
+else if ((store.get('version') || 1) < STORE_VERSION) {
+  // refresh the built-in presets to the new defaults, keep the user's own
+  for (const f of factoryPresets()) {
+    const at = ui.presets.findIndex((q) => q.name === f.name);
+    if (at >= 0) ui.presets[at] = f; else ui.presets.push(f);
+  }
+  ui.presets.forEach((q) => upgrade(q.patch));
+  store.set('presets', ui.presets);
+  ui.presetName = '';
+}
+store.set('version', STORE_VERSION);
 if (!ui.presetName) { ui.presetIdx = 0; ui.presetName = ui.presets[0].name; patch = clonePatch(ui.presets[0].patch); }
 else ui.presetIdx = ui.presets.findIndex((q) => q.name === ui.presetName);
 

@@ -71,7 +71,7 @@ canvas { display: block; }
 
 /* operator rows */
 #ops { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
-.op { display: grid; grid-template-columns: 50px 128px minmax(300px, 1fr) 128px 244px; gap: 8px; border: 1px solid var(--ink); padding: 4px 6px; flex: 1; min-height: 0; }
+.op { display: grid; grid-template-columns: 50px 128px minmax(300px, 1fr) 128px 278px; gap: 8px; border: 1px solid var(--ink); padding: 4px 6px; flex: 1; min-height: 0; }
 .op .head { display: flex; flex-direction: column; gap: 3px; }
 .op .letter { font-size: 26px; font-weight: 700; line-height: 26px; }
 .op .role { font-size: 8px; color: var(--mid); text-transform: uppercase; }
@@ -81,7 +81,7 @@ canvas { display: block; }
 .striptools { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; overflow: hidden; }
 .clockcol { display: grid; grid-template-columns: repeat(5, 40px); gap: 2px 6px; align-content: start; }
 .clockcol .wide { grid-column: span 2; }
-.saw { width: 86px; height: 24px; }
+.saw { width: 72px; height: 24px; }
 .jumpset { display: grid; grid-template-columns: repeat(7, 10px); gap: 1px; }
 .jumpset .j { width: 9px; height: 8px; border: 1px solid var(--dim); cursor: pointer; }
 .jumpset .j.on { background: var(--ink); border-color: var(--ink); }
@@ -104,7 +104,7 @@ canvas { display: block; }
 .gate.off-len { opacity: 0.35; }
 
 @media (max-width: 1360px) {
-  .op { grid-template-columns: 50px 128px minmax(260px, 1fr) 128px 244px; gap: 6px; }
+  .op { grid-template-columns: 50px 128px minmax(260px, 1fr) 128px 278px; gap: 6px; }
 }
 
 /* ---------- phone portrait (Pixel 9a: 412 css px wide): one screen, tabs, no scrolling ---------- */
@@ -143,7 +143,7 @@ canvas { display: block; }
   .op .clockc { order: 5; flex: none; gap: 2px; }
   .op .clockc > .row { gap: 6px; flex-wrap: nowrap; }
   .op .clockc > .row:last-child { justify-content: space-between; }
-  .saw { width: 110px; }
+  .saw { width: 84px; }
   .sel-box, .btn, .tog { height: 24px; line-height: 22px; min-width: 26px; }
   .jumpset { grid-template-columns: repeat(10, 10px); }
 

@@ -22,6 +22,9 @@ with no DOM use, ready to port to C++/JUCE.
   clocks, jump sets, gate row and modulators, and gives the patch a new generated name. RND ALL respects the locks.
 - On phones (under 760px wide, e.g. Pixel 9a portrait) everything fits one screen with no scrolling: tabs A B C D
   (one operator each), VOICE, LFO and RND. The top bar (start, randomise, name, master saw) is always visible.
+- Clock per sequencer: `link` (follows the master saw x mult, with sync/reset) or `free` (default: runs on its
+  own rate in Hz, unlinked from the master and from the other sequencers). A free sequencer retriggers its own
+  operator's envelope on every fired step, so each one plays as its own part.
 - Sequencer speed: master 10-999 bpm or 0.01-50 Hz, with 1-16 beats per cycle; each operator's rate
   (multiplier) runs from 1/64 to 64 (presets 1/16 to 64, or the rate knob for anything in between).
 - Amp source per operator (the "amp" box under the operator letter): env = note envelope, hold = steady level,

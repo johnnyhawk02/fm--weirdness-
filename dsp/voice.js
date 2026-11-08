@@ -23,15 +23,20 @@ export class Voice {
     this.fb1 = v.fb1; this.fb2 = v.fb2; this.pitchEnv = v.pitchEnv; this.algorithm = v.algorithm;
   }
 
-  trigger(offsetSamples = 0) {
+  // keep: bitmask of free-running operators whose envelopes ignore the note trigger
+  trigger(offsetSamples = 0, keep = 0) {
     // offsetSamples: fraction of a sample already elapsed since the trigger point (sub-sample start)
     for (let j = 0; j < 4; j++) {
-      this.phase[j] = 0; this.env[j] = 0; this.stage[j] = 0; this.out[j] = 0;
+      this.phase[j] = 0; this.out[j] = 0;
+      if (!(keep & (1 << j))) { this.env[j] = 0; this.stage[j] = 0; }
     }
     this.fb1 = this.fb2 = 0;
     this.pitchEnv = 1;
     this.subOffset = offsetSamples;
   }
+
+  // Retrigger one operator's envelope without a jump: the attack rises from where it is now.
+  retrigOp(j) { this.stage[j] = 0; }
 
   // freq[4]: Hz per op before the pitch envelope. gain[4]: level * seq gain per op. attInc[4]: env increment per sample.
   // decCoef[4]: per-sample decay multiplier. feedback: -1..1.

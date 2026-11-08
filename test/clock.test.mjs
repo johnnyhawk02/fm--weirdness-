@@ -11,7 +11,7 @@ function runClocks(configure, cycles, block = 128) {
   p.clock.mode = 'bpm'; p.clock.bpm = 137; p.clock.beats = 4; // deliberately non-integer cycle length
   p.rnd.algoChance = 0;
   for (const m of p.mods) m.on = false;
-  for (const o of p.ops) o.syncEvery = 1; // hard sync on every master wrap
+  for (const o of p.ops) { o.syncEvery = 1; o.clock = 0; } // linked to the master, hard sync every wrap
   configure(p);
   const e = new Engine(SR);
   e.setPatch(p);
@@ -119,4 +119,21 @@ test('sequencer rate spans very slow to very fast, and an LFO on rate keeps sync
   const counts = new Set();
   for (let c = 0; c < mod.master.length - 1; c++) counts.add(mod.wraps[0].filter((w) => w.cycle === c).length);
   assert.ok(counts.size > 1, 'LFO on A.rate changes how many steps fit in a cycle');
+});
+
+test('free-running sequencers ignore the master and each other', () => {
+  const { master, wraps } = runClocks((p) => {
+    p.ops.forEach((o, i) => { o.clock = 1; o.hz = [1.1, 5.3, 3.7, 2.15][i]; o.sync = true; });
+    p.clock.bpm = 60; // a slow master must not change the free rates
+  }, 3);
+  const secs = master[master.length - 1] / SR;
+  [1.1, 5.3, 3.7, 2.15].forEach((hz, i) => {
+    const w = wraps[i].map((x) => x.s);
+    const rate = (w.length - 1) / ((w[w.length - 1] - w[0]) / SR);
+    assert.ok(Math.abs(rate - hz) < 0.01, `op ${'ABCD'[i]} runs at ${rate.toFixed(3)} Hz, expected ${hz}`);
+    // no reset at master wraps: wraps do not land on master samples (except the very first)
+    const aligned = master.slice(1).filter((ms) => w.includes(ms)).length;
+    assert.ok(aligned === 0, `op ${'ABCD'[i]} realigned to the master ${aligned} times`);
+  });
+  assert.ok(secs > 1);
 });
