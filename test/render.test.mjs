@@ -85,15 +85,15 @@ test('with mutate on, the pattern after 16 master cycles differs from cycle 1 bu
   const n = Math.ceil(18 / masterRateHz(p.clock) * SR);
   for (let i = 0; i < n; i += 128) e.process(L, R, 128);
   assert.ok(first && after);
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < p.ops.length; i++) {
     const len = p.ops[i].length;
     const a = first[i].steps.slice(0, len), b = after[i].steps.slice(0, len);
-    assert.notDeepEqual(a, b, `op ${'ABCD'[i]} did not evolve`);
+    assert.notDeepEqual(a, b, `op ${'ABCDEFG'[i]} did not evolve`);
     const palette = new Set(a.filter((s) => s.depth !== 0).map((s) => s.shape));
-    for (const s of b) if (s.depth !== 0) assert.ok(palette.has(s.shape), `op ${'ABCD'[i]} left its palette (shape ${s.shape})`);
+    for (const s of b) if (s.depth !== 0) assert.ok(palette.has(s.shape), `op ${'ABCDEFG'[i]} left its palette (shape ${s.shape})`);
     for (const s of b) assert.ok(s.depth >= -1 && s.depth <= 1);
     const changed = a.filter((s, k) => JSON.stringify(s) !== JSON.stringify(b[k])).length;
-    console.log(`# op ${'ABCD'[i]}: ${changed}/${len} steps changed after 16 cycles, palette [${[...palette]}]`);
+    console.log(`# op ${'ABCDEFG'[i]}: ${changed}/${len} steps changed after 16 cycles, palette [${[...palette]}]`);
     assert.ok(b[0].depth !== 0 || a[0].depth === 0, 'step 1 stays on');
   }
 });

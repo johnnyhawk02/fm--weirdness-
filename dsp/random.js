@@ -1,5 +1,5 @@
 // Randomisers. Pure functions over the patch, driven by a seeded Rng so results are recallable.
-import { PARAM_SPECS, SPEC_BY_PATH, getPath, setPath, makeStep, MAX_STEPS, LOCK_KEYS, MULT_PRESETS, FILL_STYLES, MOD_TARGETS as MOD_TARGETS_LOCAL } from './params.js';
+import { PARAM_SPECS, SPEC_BY_PATH, getPath, setPath, makeStep, MAX_STEPS, LOCK_KEYS, MULT_PRESETS, FILL_STYLES, MOD_TARGETS as MOD_TARGETS_LOCAL, NUM_OPS, ALGORITHMS } from './params.js';
 import { SHAPES } from './shapes.js';
 
 const NICE_RATIOS = [0.5, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 6, 7, 8, 1.5, 2.5, 3.5, 9, 11, 13];
@@ -180,13 +180,13 @@ export function randomizeSection(patch, section, amount, rng, opIndex = -1) {
     randomizePath(patch, spec.path, amount, rng);
   }
   if (section === 'seq') {
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < NUM_OPS; i++) {
       if (opIndex >= 0 && i !== opIndex) continue;
       if (rng.next() < amount) fillSteps(patch.ops[i], patch.rnd.style, rng, 1);
     }
   }
   if (section === 'clocks') {
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < NUM_OPS; i++) {
       if (opIndex >= 0 && i !== opIndex) continue;
       if (rng.next() < amount * 0.5) {
         const set = [];
@@ -241,7 +241,7 @@ export function randomizeEverything(patch, rng) {
   patch.rnd.style = rng.int(FILL_STYLES.length);
   patch.rnd.lockDensity = round4(rng.range(0, 0.4));
   patch.voice.pitchEnvSemis = round4(rng.next() < 0.5 ? rng.range(-24, 24) : rng.range(-4, 4));
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < NUM_OPS; i++) {
     const op = patch.ops[i];
     op.ratioMode = rng.next() < 0.12 ? 'fixed' : 'ratio';
     op.fixedHz = round4(Math.exp(rng.range(Math.log(40), Math.log(4000))));
@@ -254,7 +254,7 @@ export function randomizeEverything(patch, rng) {
   }
   // keep at least one carrier clearly audible
   const alg = patch.voice.algorithm;
-  const carriers = [[0], [0], [0, 2], [0], [0, 1, 2], [0], [0, 1, 2], [0, 1, 2, 3]][alg];
+  const carriers = ALGORITHMS[alg].carriers;
   for (const c of carriers) patch.ops[c].level = Math.max(patch.ops[c].level, 0.45);
   if (rng.next() < 0.5) patch.ops[carriers[0]].amp = 1; // often a steady carrier, so modulation is audible
   patch.ops[carriers[0]].seqAmount = Math.max(0.5, patch.ops[carriers[0]].seqAmount);

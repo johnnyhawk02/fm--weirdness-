@@ -16,7 +16,7 @@ function runClocks(configure, cycles, block = 128) {
   const e = new Engine(SR);
   e.setPatch(p);
   const master = [];               // sample index of each master wrap
-  const wraps = [[], [], [], []];  // per op: { sample, cycle }
+  const wraps = Array.from({ length: 7 }, () => []); // per op: { sample, cycle }
   e.onMasterWrap = (c, s) => master.push(s);
   e.onWrap = (op, s) => wraps[op].push({ s, cycle: master.length - 1 });
   e.reset();
@@ -27,40 +27,40 @@ function runClocks(configure, cycles, block = 128) {
   return { master, wraps, p };
 }
 
-test('multipliers 1,2,3,4 advance operators exactly 1x..4x per master cycle (sync on)', () => {
-  const mults = [1, 2, 3, 4];
+test('multipliers 1,2,3,4 (and 5,6,8 on E-G) advance operators exactly that many steps per master cycle (sync on)', () => {
+  const mults = [1, 2, 3, 4, 5, 6, 8];
   const { master, wraps } = runClocks((p) => p.ops.forEach((o, i) => { o.mult = mults[i]; o.sync = true; }), 12);
   assert.ok(master.length >= 12);
   const full = master.length - 1; // complete master cycles
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 7; i++) {
     for (let c = 0; c < full; c++) {
       const count = wraps[i].filter((w) => w.cycle === c).length;
-      assert.equal(count, mults[i], `op ${'ABCD'[i]} cycle ${c}: ${count} wraps, expected ${mults[i]}`);
+      assert.equal(count, mults[i], `op ${'ABCDEFG'[i]} cycle ${c}: ${count} wraps, expected ${mults[i]}`);
     }
   }
 });
 
 test('with sync on, all four wraps land on the master wrap sample every cycle', () => {
-  const mults = [1, 2, 3, 4];
+  const mults = [1, 2, 3, 4, 5, 6, 8];
   const { master, wraps } = runClocks((p) => p.ops.forEach((o, i) => { o.mult = mults[i]; o.sync = true; }), 12);
   for (const ms of master) {
-    for (let i = 0; i < 4; i++) {
-      assert.ok(wraps[i].some((w) => w.s === ms), `op ${'ABCD'[i]} has no wrap on master sample ${ms}`);
+    for (let i = 0; i < 7; i++) {
+      assert.ok(wraps[i].some((w) => w.s === ms), `op ${'ABCDEFG'[i]} has no wrap on master sample ${ms}`);
     }
   }
 });
 
 test('polyrhythm 3:4 with sync realigns on every master wrap', () => {
-  const mults = [3 / 4, 4 / 3, 3, 4];
+  const mults = [3 / 4, 4 / 3, 3, 4, 3 / 2, 2 / 3, 6];
   const { master, wraps } = runClocks((p) => p.ops.forEach((o, i) => { o.mult = mults[i]; o.sync = true; }), 9);
-  for (const ms of master) for (let i = 0; i < 4; i++) assert.ok(wraps[i].some((w) => w.s === ms));
+  for (const ms of master) for (let i = 0; i < 7; i++) assert.ok(wraps[i].some((w) => w.s === ms));
 });
 
 test('free-running wraps are evenly spaced at the right rate (sync off, integer mults)', () => {
-  const mults = [1, 2, 3, 4];
+  const mults = [1, 2, 3, 4, 5, 6, 8];
   const { master, wraps } = runClocks((p) => p.ops.forEach((o, i) => { o.mult = mults[i]; o.sync = false; }), 12);
   const period = master[master.length - 1] - master[master.length - 2];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 7; i++) {
     const w = wraps[i].map((x) => x.s);
     const total = w.length - 1;
     const span = w[w.length - 1] - w[0];
@@ -83,9 +83,9 @@ test('with sync off and a float multiplier, the saw drifts against the master', 
       return ms - prev;
     });
     const distinct = new Set(offsets).size;
-    assert.ok(distinct > offsets.length / 2, `op ${'ABCD'[op]} did not drift: ${offsets.slice(0, 6)}`);
+    assert.ok(distinct > offsets.length / 2, `op ${'ABCDEFG'[op]} did not drift: ${offsets.slice(0, 6)}`);
     const aligned = master.slice(1).filter((ms) => ws.includes(ms)).length;
-    assert.ok(aligned < master.length / 3, `op ${'ABCD'[op]} stayed aligned with the master`);
+    assert.ok(aligned < master.length / 3, `op ${'ABCDEFG'[op]} stayed aligned with the master`);
   }
 });
 
@@ -113,7 +113,7 @@ test('sequencer rate spans very slow to very fast, and an LFO on rate keeps sync
   const mod = runClocks((p) => {
     p.mods[0] = { on: true, target: 'A.rate', depth: 0.8, rate: 0.7, smooth: 0, shape: 1 };
     p.mods[1] = { on: true, target: 'clock', depth: 0.5, rate: 0.3, smooth: 0, shape: 2 };
-    p.ops.forEach((o, i) => { o.mult = [2, 2, 3, 4][i]; o.sync = true; });
+    p.ops.forEach((o, i) => { o.mult = [2, 2, 3, 4, 1, 1, 1][i]; o.sync = true; });
   }, 10);
   for (const ms of mod.master) assert.ok(mod.wraps[0].some((w) => w.s === ms));
   const counts = new Set();
@@ -123,17 +123,17 @@ test('sequencer rate spans very slow to very fast, and an LFO on rate keeps sync
 
 test('free-running sequencers ignore the master and each other', () => {
   const { master, wraps } = runClocks((p) => {
-    p.ops.forEach((o, i) => { o.clock = 1; o.hz = [1.1, 5.3, 3.7, 2.15][i]; o.sync = true; });
+    p.ops.forEach((o, i) => { o.clock = 1; o.hz = [1.1, 5.3, 3.7, 2.15, 0.9, 7.1, 1.6][i]; o.sync = true; });
     p.clock.bpm = 60; // a slow master must not change the free rates
   }, 3);
   const secs = master[master.length - 1] / SR;
-  [1.1, 5.3, 3.7, 2.15].forEach((hz, i) => {
+  [1.1, 5.3, 3.7, 2.15, 0.9, 7.1, 1.6].forEach((hz, i) => {
     const w = wraps[i].map((x) => x.s);
     const rate = (w.length - 1) / ((w[w.length - 1] - w[0]) / SR);
-    assert.ok(Math.abs(rate - hz) < 0.01, `op ${'ABCD'[i]} runs at ${rate.toFixed(3)} Hz, expected ${hz}`);
+    assert.ok(Math.abs(rate - hz) < 0.01, `op ${'ABCDEFG'[i]} runs at ${rate.toFixed(3)} Hz, expected ${hz}`);
     // no reset at master wraps: wraps do not land on master samples (except the very first)
     const aligned = master.slice(1).filter((ms) => w.includes(ms)).length;
-    assert.ok(aligned === 0, `op ${'ABCD'[i]} realigned to the master ${aligned} times`);
+    assert.ok(aligned === 0, `op ${'ABCDEFG'[i]} realigned to the master ${aligned} times`);
   });
   assert.ok(secs > 1);
 });

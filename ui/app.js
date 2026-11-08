@@ -1,7 +1,7 @@
 // UI shell: builds the LCD panel, keeps the patch, undo/redo, snapshots, and drives the worklet.
 import {
   defaultPatch, clonePatch, getPath, setPath, SPEC_BY_PATH, ALGORITHMS, OP_NAMES, MULT_PRESETS, MULT_LABELS,
-  DIRECTIONS, DESTS, FILL_STYLES, LOCK_KEYS, MOD_TARGETS, MAX_STEPS, multLabel, masterRateHz, LFO_SHAPES, MULT_MIN, MULT_MAX, AMP_SOURCES,
+  DIRECTIONS, DESTS, FILL_STYLES, LOCK_KEYS, MOD_TARGETS, MAX_STEPS, multLabel, masterRateHz, LFO_SHAPES, MULT_MIN, MULT_MAX, AMP_SOURCES, NUM_OPS,
 } from '../dsp/params.js';
 import { SHAPES, shapeValue } from '../dsp/shapes.js';
 import { Rng, hashSeed } from '../dsp/rng.js';
@@ -23,6 +23,10 @@ const fresh = new URLSearchParams(location.search).has('fresh');
 let patch = (!fresh && store.get('patch')) || defaultPatch();
 function upgrade(p) {
   for (const m of p.mods) if (m.shape == null) m.shape = 0;
+  if (p.ops.length < NUM_OPS) { // older 4-operator patches: add silent operators E-G
+    const d = defaultPatch();
+    for (let i = p.ops.length; i < NUM_OPS; i++) { const o = d.ops[i]; o.level = 0; p.ops.push(o); }
+  }
   for (const o of p.ops) { if (o.amp == null) o.amp = 0; if (o.clock == null) o.clock = 0; if (o.hz == null) o.hz = 2; }
   return p;
 }
@@ -31,7 +35,7 @@ const ui = {
   seedLocked: false,
   locks: { voice: false, seq: false, clocks: false, mods: false },
   rndCount: 0,
-  lane: [0, 0, 0, 0], lockKey: [0, 0, 0, 0],
+  lane: new Array(NUM_OPS).fill(0), lockKey: new Array(NUM_OPS).fill(0),
   snaps: (!fresh && store.get('snaps')) || new Array(8).fill(null),
   snapA: 0, snapB: 1, morph: 0,
   running: false, state: null, selected: null,
@@ -145,10 +149,25 @@ function group(parent, title) {
 }
 
 // --- top bar ---
-const brand = el('div', 'brand', top, 'FM/STEP');
+const brand = el('div', 'brand', top);
+el('span', 'brandname', brand, 'FM/STEP');
 const nameBox = el('input', 'pname', brand);
 nameBox.spellcheck = false;
 nameBox.title = 'preset name (type to rename, enter to save)';
+const presetBar = el('div', 'presetbar', brand);
+button(presetBar, '◂', () => stepPreset(-1), 'previous preset').classList.add('pnav');
+button(presetBar, '▸', () => stepPreset(1), 'next preset').classList.add('pnav');
+const saveBtn = button(presetBar, 'SAVE', () => savePreset(), 'save this sound as a preset under the name shown');
+saveBtn.classList.add('savebtn');
+const saveState = el('div', 'savestate', brand, '');
+ctx.register(() => {
+  saveBtn.classList.toggle('dirty', ui.presetDirty);
+  saveBtn.textContent = ui.presetDirty ? 'SAVE' : 'SAVED ✓';
+  const n = ui.presets ? ui.presets.length : 0;
+  saveState.textContent = ui.presetDirty
+    ? (ui.presetIdx >= 0 ? 'changed · not saved' : 'new sound · not saved')
+    : `preset ${ui.presetIdx + 1} of ${n}`;
+});
 nameBox.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { savePreset(); nameBox.blur(); } });
 nameBox.addEventListener('input', () => { ui.presetName = nameBox.value; ui.presetDirty = true; refreshAll(); });
 ctx.register(() => {
@@ -198,37 +217,39 @@ const algoEls = ALGORITHMS.map((a, i) => {
 ctx.register(() => algoEls.forEach((b, i) => b.classList.toggle('base', i === patch.voice.algorithm)));
 el('div', 'sep', top);
 const outG = group(top, 'out');
-knob(ctx, outG, { path: 'voice.feedback', label: 'fb D' });
+knob(ctx, outG, { path: 'voice.feedback', label: 'fb G' });
 knob(ctx, outG, { path: 'voice.level', label: 'level' });
 knob(ctx, outG, { path: 'voice.pan', label: 'pan' });
 
 function algoSvg(a) {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('width', 34); svg.setAttribute('height', 38);
+  const W = 40, H = 40, N = NUM_OPS;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
   // level = distance from a carrier
-  const lvl = [0, 0, 0, 0];
-  for (let j = 0; j < 4; j++) for (let t = 0; t < 4; t++) if (a.mods[t].includes(j)) lvl[j] = Math.max(lvl[j], lvl[t] + 1);
-  for (let j = 0; j < 4; j++) for (let t = 0; t < 4; t++) if (a.mods[t].includes(j)) lvl[j] = Math.max(lvl[j], lvl[t] + 1);
+  const lvl = new Array(N).fill(0);
+  for (let pass = 0; pass < N; pass++) for (let j = 0; j < N; j++) for (let t = 0; t < N; t++) if (a.mods[t].includes(j)) lvl[j] = Math.max(lvl[j], lvl[t] + 1);
   const maxL = Math.max(...lvl);
+  const dy = maxL ? Math.min(9, 26 / maxL) : 0;
   const pos = [];
   for (let L = 0; L <= maxL; L++) {
-    const ops = [0, 1, 2, 3].filter((j) => lvl[j] === L);
-    ops.forEach((j, k) => { pos[j] = { x: 17 + (k - (ops.length - 1) / 2) * 8, y: 30 - L * (maxL > 2 ? 7 : 9) }; });
+    const ops = [...Array(N).keys()].filter((j) => lvl[j] === L);
+    const dx = Math.min(7, 32 / Math.max(1, ops.length));
+    ops.forEach((j, k) => { pos[j] = { x: W / 2 + (k - (ops.length - 1) / 2) * dx, y: 32 - L * dy }; });
   }
   const add = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.appendChild(e); return e; };
-  for (let t = 0; t < 4; t++) for (const s of a.mods[t]) add('line', { x1: pos[s].x, y1: pos[s].y, x2: pos[t].x, y2: pos[t].y, stroke: C.ink, 'stroke-width': 1 });
-  add('line', { x1: 3, y1: 35, x2: 31, y2: 35, stroke: C.ink, 'stroke-width': 1 });
-  for (const c of a.carriers) add('line', { x1: pos[c].x, y1: pos[c].y, x2: pos[c].x, y2: 35, stroke: C.ink, 'stroke-width': 1 });
-  for (let j = 0; j < 4; j++) {
-    add('rect', { x: pos[j].x - 2.5, y: pos[j].y - 2.5, width: 5, height: 5, fill: j === 3 ? C.bg : C.ink, stroke: C.ink, 'stroke-width': 1 });
+  for (let t = 0; t < N; t++) for (const s of a.mods[t]) add('line', { x1: pos[s].x, y1: pos[s].y, x2: pos[t].x, y2: pos[t].y, stroke: C.ink, 'stroke-width': 1 });
+  add('line', { x1: 2, y1: 37, x2: W - 2, y2: 37, stroke: C.ink, 'stroke-width': 1 });
+  for (const c of a.carriers) add('line', { x1: pos[c].x, y1: pos[c].y, x2: pos[c].x, y2: 37, stroke: C.ink, 'stroke-width': 1 });
+  for (let j = 0; j < N; j++) {
+    add('rect', { x: pos[j].x - 2, y: pos[j].y - 2, width: 4, height: 4, fill: j === N - 1 ? C.bg : C.ink, stroke: C.ink, 'stroke-width': 1 });
   }
   return svg;
 }
 
 // --- operator rows ---
 const opUI = [];
-for (let i = 0; i < 4; i++) buildOp(i);
+for (let i = 0; i < NUM_OPS; i++) buildOp(i);
 
 function buildOp(i) {
   const o = `ops.${i}.`;
@@ -333,7 +354,7 @@ function buildOp(i) {
     jEls.forEach((b, k) => b.classList.toggle('on', patch.ops[i].jumpSet.includes(k)));
     jlab.textContent = patch.ops[i].jumpSet.map((k) => MULT_LABELS[k]).join(' ');
   });
-  opUI[i] = { strip, saw, posLbl, sawLbl };
+  opUI[i] = { strip, saw, posLbl, sawLbl, row };
 }
 
 function uictxLane(i) {
@@ -623,10 +644,11 @@ ctx.register(() => gateEls.forEach((g, k) => { g.classList.toggle('on', !!patch.
 // ---------------- phone tabs ----------------
 for (const g of [voiceG, algoG, outG]) g.parentElement.dataset.pane = 'voice';
 const tabsEl = document.getElementById('tabs');
-const TABS = [['A', 'A'], ['B', 'B'], ['C', 'C'], ['D', 'D'], ['voice', 'VOICE'], ['lfo', 'LFO'], ['rnd', 'RND']];
+const TABS = [...OP_NAMES.map((n) => [n, n]), ['voice', 'VOICE'], ['lfo', 'LFO'], ['rnd', 'RND'], ['presets', 'PRESETS']];
 ui.tab = store.get('tab') || 'A';
-const tabEls = TABS.map(([id, text]) => {
-  const b = button(tabsEl, text, () => setTab(id));
+const tabRows = [el('div', 'tabrow', tabsEl), el('div', 'tabrow', tabsEl)];
+const tabEls = TABS.map(([id, text], k) => {
+  const b = button(tabRows[k < NUM_OPS ? 0 : 1], text, () => setTab(id));
   b.dataset.tab = id;
   return b;
 });
@@ -637,6 +659,7 @@ function setTab(id) {
   const isOp = OP_NAMES.includes(id);
   opsEl.classList.toggle('pane-off', !isOp);
   bottom.classList.toggle('pane-off', isOp || id === 'voice');
+  if (id === 'presets') renderPresetList();
   tabEls.forEach((b) => b.classList.toggle('sel', b.dataset.tab === id));
 }
 setTab(ui.tab);
@@ -655,7 +678,7 @@ function factoryPresets() {
   }
   return out;
 }
-const STORE_VERSION = 2; // 2: free-running sequencers, amp sources
+const STORE_VERSION = 3; // 2: free-running sequencers, amp sources. 3: seven operators
 if (!Array.isArray(ui.presets) || !ui.presets.length) { ui.presets = factoryPresets(); store.set('presets', ui.presets); }
 else if ((store.get('version') || 1) < STORE_VERSION) {
   // refresh the built-in presets to the new defaults, keep the user's own
@@ -679,7 +702,8 @@ function savePreset() {
   if (at >= 0) { ui.presets[at] = entry; ui.presetIdx = at; } else { ui.presets.push(entry); ui.presetIdx = ui.presets.length - 1; }
   ui.presetDirty = false;
   store.set('presets', ui.presets); store.set('presetName', name);
-  flash('saved ' + name);
+  flash(`Saved “${name}” (${ui.presetIdx + 1} of ${ui.presets.length})`);
+  renderPresetList();
   refreshAll();
 }
 function loadPreset(k) {
@@ -692,6 +716,8 @@ function loadPreset(k) {
   changed(false);
   ui.presetDirty = false;
   refreshAll();
+  renderPresetList();
+  flash(`Loaded “${ui.presetName}”`);
 }
 function stepPreset(d) { loadPreset(ui.presetIdx < 0 ? (d > 0 ? 0 : -1) : ui.presetIdx + d); }
 function deletePreset() {
@@ -700,8 +726,41 @@ function deletePreset() {
   ui.presets.splice(k, 1);
   store.set('presets', ui.presets);
   ui.presetIdx = -1; ui.presetDirty = true;
-  flash('deleted');
+  flash('Preset deleted');
   refreshAll();
+  renderPresetList();
+}
+function saveAsNew() {
+  ui.presetName = presetName(uiRng());
+  savePreset();
+}
+
+// preset list (phone PRESETS tab)
+const presetsP = el('div', 'panel phone-only presetspanel', bottom);
+presetsP.dataset.pane = 'presets';
+el('div', 'title', presetsP, 'presets');
+const pHelp = el('div', 'val', presetsP, 'Edit the name at the top, then SAVE. Saving with the same name overwrites it. Tap a preset to load it.');
+pHelp.style.whiteSpace = 'normal';
+const pBtns = el('div', 'row', presetsP); pBtns.style.gap = '3px'; pBtns.style.flexWrap = 'wrap';
+button(pBtns, 'SAVE', () => savePreset(), 'save under the current name').classList.add('savebtn', 'dirty');
+button(pBtns, 'SAVE AS NEW', () => saveAsNew(), 'save a copy under a new generated name');
+let delArmed = false;
+const delBtn = button(pBtns, 'DELETE', () => {
+  if (ui.presetIdx < 0) { flash('Nothing to delete: this sound is not saved'); return; }
+  if (!delArmed) { delArmed = true; delBtn.textContent = 'TAP AGAIN'; setTimeout(() => { delArmed = false; delBtn.textContent = 'DELETE'; }, 2500); return; }
+  delArmed = false; delBtn.textContent = 'DELETE';
+  deletePreset();
+});
+button(pBtns, 'EXPORT', () => exportPresets(), 'download all presets');
+button(pBtns, 'IMPORT', () => importPresets(), 'load presets from a file');
+const pList = el('div', 'plist', presetsP);
+function renderPresetList() {
+  pList.textContent = '';
+  ui.presets.forEach((q, k) => {
+    const b = el('div', 'pitem', pList, `${String(k + 1).padStart(2, '0')}  ${q.name}`);
+    if (k === ui.presetIdx) b.classList.add('sel');
+    b.addEventListener('click', () => loadPreset(k));
+  });
 }
 function exportPresets() {
   const blob = new Blob([JSON.stringify({ format: 'fm-step-presets', version: 1, presets: ui.presets }, null, 1)], { type: 'application/json' });
@@ -725,14 +784,20 @@ function importPresets() {
         n++;
       }
       store.set('presets', ui.presets);
-      flash(`imported ${n}`);
+      flash(`Imported ${n} presets`);
+      renderPresetList();
       refreshAll();
     } catch { flash('import failed'); }
   };
   inp.click();
 }
 let flashTimer = 0;
+const toast = el('div', 'toast', document.body);
 function flash(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove('show'), 1800);
   const h = document.getElementById('hint');
   if (!h._orig) h._orig = h.textContent;
   h.textContent = msg; h.style.color = C.ink;
@@ -845,7 +910,8 @@ function frame() {
   const live = ui.running && !!st;
   drawSaw(masterSaw, live ? st[0] : 0, live);
   cycleLbl.textContent = live ? `cy ${Math.max(0, st[1] | 0)}` : `${(1 / masterRateHz(patch.clock)).toFixed(2)}s`;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < NUM_OPS; i++) {
+    if (opUI[i].row.classList.contains('pane-off') && window.innerWidth <= 760) continue;
     drawStrip(i);
     drawSaw(opUI[i].saw, live ? st[3 + i * 5] : 0, live);
     const pos = live ? st[3 + i * 5 + 1] + 1 : 0;
@@ -854,7 +920,7 @@ function frame() {
   const liveAlgo = live ? st[2] : -1;
   algoEls.forEach((b, k) => b.classList.toggle('live', k === liveAlgo));
   for (let m = 0; m < 4; m++) {
-    const v = live ? st[23 + m] : 0;
+    const v = live ? st[3 + NUM_OPS * 5 + m] : 0;
     modBars[m].style.left = `calc(${((v + 1) / 2 * 100).toFixed(1)}% - 1px)`;
     modBars[m].style.opacity = patch.mods[m].on ? 1 : 0.3;
   }

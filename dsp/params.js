@@ -1,19 +1,26 @@
 // Patch model, constants and parameter specs. Plain data, no DOM.
 
-export const OP_NAMES = ['A', 'B', 'C', 'D'];
+export const NUM_OPS = 7;
+export const OP_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 export const MAX_STEPS = 16;
 
 // Algorithms: mods[target] = operator indices modulating target; carriers = summed to output.
-// Every modulator has a higher index than its target, so operators render D, C, B, A.
+// Every modulator has a higher index than its target, so operators render G down to A.
+// Feedback is on G, the last operator.
+function alg(name, edges, carriers) {
+  const mods = Array.from({ length: NUM_OPS }, () => []);
+  for (const e of edges) { const [src, dst] = e.split('>').map((c) => c.charCodeAt(0) - 65); mods[dst].push(src); }
+  return { name, mods, carriers };
+}
 export const ALGORITHMS = [
-  { name: 'D>C>B>A',       mods: [[1], [2], [3], []],     carriers: [0] },
-  { name: 'D,C>B>A',       mods: [[1], [2, 3], [], []],   carriers: [0] },
-  { name: 'B>A  D>C',      mods: [[1], [], [3], []],      carriers: [0, 2] },
-  { name: 'B,C,D>A',       mods: [[1, 2, 3], [], [], []], carriers: [0] },
-  { name: 'D>A,B,C',       mods: [[3], [3], [3], []],     carriers: [0, 1, 2] },
-  { name: 'D>C  B,C>A',    mods: [[1, 2], [], [3], []],   carriers: [0] },
-  { name: 'D>C  A B C',    mods: [[], [], [3], []],       carriers: [0, 1, 2] },
-  { name: 'A B C D',       mods: [[], [], [], []],        carriers: [0, 1, 2, 3] },
+  alg('G>F>E>D>C>B>A', ['B>A', 'C>B', 'D>C', 'E>D', 'F>E', 'G>F'], [0]),
+  alg('D>C>B>A  G>F>E', ['B>A', 'C>B', 'D>C', 'F>E', 'G>F'], [0, 4]),
+  alg('B>A  D>C  G>F>E', ['B>A', 'D>C', 'F>E', 'G>F'], [0, 2, 4]),
+  alg('B,C,D>A  G>F>E', ['B>A', 'C>A', 'D>A', 'F>E', 'G>F'], [0, 4]),
+  alg('G>A,B,C,D,E,F', ['G>A', 'G>B', 'G>C', 'G>D', 'G>E', 'G>F'], [0, 1, 2, 3, 4, 5]),
+  alg('G>F>A,B,C  E>D', ['F>A', 'F>B', 'F>C', 'G>F', 'E>D'], [0, 1, 2, 3]),
+  alg('B>A  D>C  F>E  G', ['B>A', 'D>C', 'F>E'], [0, 2, 4, 6]),
+  alg('A B C D E F G', [], [0, 1, 2, 3, 4, 5, 6]),
 ];
 
 export const MULT_PRESETS = [1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 4, 1, 4 / 3, 3 / 2, 2, 3, 4, 6, 8, 12, 16, 32, 64];
@@ -27,11 +34,7 @@ export const FILL_STYLES = ['uniform', 'drunk', 'sparse', 'cluster', 'euclid'];
 export const LOCK_KEYS = ['ratio', 'decay', 'feedback', 'shape'];
 export const MOD_TARGETS = [
   'off', 'pitch', 'feedback', 'algorithm', 'pan', 'clock',
-  'A.rate', 'B.rate', 'C.rate', 'D.rate',
-  'A.level', 'B.level', 'C.level', 'D.level',
-  'A.ratio', 'B.ratio', 'C.ratio', 'D.ratio',
-  'A.decay', 'B.decay', 'C.decay', 'D.decay',
-  'A.seqAmount', 'B.seqAmount', 'C.seqAmount', 'D.seqAmount',
+  ...['rate', 'level', 'ratio', 'decay', 'seqAmount'].flatMap((k) => ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((o) => `${o}.${k}`)),
 ];
 
 export function multLabel(m) {
@@ -52,22 +55,22 @@ export function makeStep(depth = 0, shape = 0) {
 }
 
 function makeOp(i) {
-  const ratios = [1, 2, 3, 0.5];
-  const mults = [2, 4, 3, 3 / 2];
-  const levels = [0.85, 0.45, 0.55, 0.35];
+  const ratios = [1, 2, 3, 0.5, 2, 3.5, 7];
+  const mults = [2, 4, 3, 3 / 2, 2, 6, 1];
+  const levels = [0.85, 0.45, 0.55, 0.35, 0.6, 0.5, 0.3];
   const steps = [];
   for (let s = 0; s < MAX_STEPS; s++) steps.push(makeStep());
   return {
     // FM
     ratioMode: 'ratio', ratio: ratios[i], fine: 0, fixedHz: 440,
     level: levels[i], attack: 0.002,
-    decay: [3, 0.8, 2.5, 2][i],
-    amp: i === 0 ? 1 : 0, // amp source: 0 note envelope, 1 hold (steady), 2-5 LFO 1-4
+    decay: [3, 0.8, 2.5, 2, 3, 0.6, 1.2][i],
+    amp: i === 0 || i === 4 ? 1 : 0, // amp source: 0 note envelope, 1 hold (steady), 2-5 LFO 1-4
     // sequencer
-    length: [8, 16, 12, 6][i], steps, seqAmount: i === 0 ? 0.3 : 1, dest: 0, destRange: 0.5,
+    length: [8, 16, 12, 6, 10, 7, 5][i], steps, seqAmount: i === 0 || i === 4 ? 0.3 : 1, dest: 0, destRange: 0.5,
     mutateEvery: 2, mutateK: 0,
     // clock
-    clock: 1, hz: [1.1, 5.3, 3.7, 2.15][i], // 0 = linked to the master saw (mult), 1 = free-running at hz steps/s
+    clock: 1, hz: [1.1, 5.3, 3.7, 2.15, 0.9, 7.1, 1.6][i], // 0 = linked to the master saw (mult), 1 = free-running at hz steps/s
     mult: mults[i], sync: true, syncEvery: 4, drift: 0, jitter: 0, scatter: 0,
     direction: 0, jumpChance: 0, jumpSet: [7, 10, 11, 12],
   };
@@ -79,13 +82,13 @@ export function defaultPatch() {
     voice: {
       pitchMode: 'note', note: 45, hz: 110,
       pitchEnvSemis: 7, pitchEnvDecay: 0.02,
-      level: 0.8, pan: 0, algorithm: 2, feedback: 0.2,
+      level: 0.8, pan: 0, algorithm: 1, feedback: 0.2,
     },
     clock: {
       mode: 'bpm', bpm: 120, beats: 1, hz: 0.5,
       gateOn: false, gateLen: 8, gate: Array.from({ length: MAX_STEPS }, (_, i) => i % 4 === 0),
     },
-    ops: [0, 1, 2, 3].map(makeOp),
+    ops: Array.from({ length: NUM_OPS }, (_, i) => makeOp(i)),
     rnd: { algoChance: 0, amount: 0.5, style: 0, lockDensity: 0.25 },
     mods: [
       { on: true, target: 'algorithm', depth: 0.3, rate: 0.125, smooth: 0, shape: 0 },
@@ -100,6 +103,9 @@ export function defaultPatch() {
     [[0, 0.9, 1], [2, 0.5, 1], [5, 0.7, 0], [9, 0.6, 8], [12, 1, 1], [14, 0.4, 1]],
     [[0, 0.7, 6], [4, -0.6, 0], [7, 0.8, 3], [10, 0.5, 6]],
     [[0, 1, 2], [2, 0.6, 4], [4, -0.8, 5]],
+    [[0, 1, 0], [5, 0.7, 1]],
+    [[0, 0.8, 1], [1, 0.4, 1], [3, 0.9, 7], [5, 0.5, 1]],
+    [[0, 0.9, 6], [2, 0.6, 3], [3, -0.7, 0]],
   ];
   pat.forEach((list, i) => list.forEach(([s, d, sh]) => { p.ops[i].steps[s].depth = d; p.ops[i].steps[s].shape = sh; }));
   return p;
@@ -117,7 +123,7 @@ export function masterRateHz(clock) {
 // ---- Specs used by randomisers, morphing and the UI ----
 // section: voice | seq | clocks.  type: lin | log | int | choice | bool
 const opSpecs = [];
-for (let i = 0; i < 4; i++) {
+for (let i = 0; i < NUM_OPS; i++) {
   const o = `ops.${i}.`;
   opSpecs.push(
     { path: o + 'ratio', section: 'voice', type: 'ratio', min: 0.5, max: 16, def: [1, 2, 3, 0.5][i] },

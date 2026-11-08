@@ -1,5 +1,7 @@
 // One 4-operator phase-modulation voice. Plain JS, no allocation in the audio path.
-import { ALGORITHMS } from './params.js';
+import { ALGORITHMS, NUM_OPS } from './params.js';
+
+const FB_OP = NUM_OPS - 1; // feedback lives on the last operator
 
 const TWO_PI = Math.PI * 2;
 const MOD_INDEX = 0.6;   // phase deviation (cycles) of a modulator at level 1 (~3.8 rad)
@@ -9,10 +11,10 @@ const AA_CORNER = 5000;  // Hz: modulation index halves when the modulated op re
 export class Voice {
   constructor(sr) {
     this.sr = sr;
-    this.phase = new Float64Array(4);
-    this.env = new Float64Array(4);      // envelope value 0..1
-    this.stage = new Uint8Array(4);      // 0 attack, 1 decay
-    this.out = new Float64Array(4);      // last operator outputs (scaled)
+    this.phase = new Float64Array(NUM_OPS);
+    this.env = new Float64Array(NUM_OPS);      // envelope value 0..1
+    this.stage = new Uint8Array(NUM_OPS);      // 0 attack, 1 decay
+    this.out = new Float64Array(NUM_OPS);      // last operator outputs (scaled)
     this.fb1 = 0; this.fb2 = 0;
     this.pitchEnv = 0;                   // 1 -> 0 decaying pitch envelope
     this.algorithm = 0;
@@ -26,7 +28,7 @@ export class Voice {
   // keep: bitmask of free-running operators whose envelopes ignore the note trigger
   trigger(offsetSamples = 0, keep = 0) {
     // offsetSamples: fraction of a sample already elapsed since the trigger point (sub-sample start)
-    for (let j = 0; j < 4; j++) {
+    for (let j = 0; j < NUM_OPS; j++) {
       this.phase[j] = 0; this.out[j] = 0;
       if (!(keep & (1 << j))) { this.env[j] = 0; this.stage[j] = 0; }
     }
@@ -50,7 +52,7 @@ export class Voice {
     const fmax = sr * 0.45;
     const off = this.subOffset || 0;
     this.subOffset = 0;
-    for (let j = 3; j >= 0; j--) {
+    for (let j = NUM_OPS - 1; j >= 0; j--) {
       // envelope
       let e = this.env[j];
       if (this.stage[j] === 0) {
@@ -74,12 +76,12 @@ export class Voice {
         const r = f / AA_CORNER;
         pm *= MOD_INDEX / (1 + r * r);
       }
-      if (j === 3 && feedback !== 0) {
+      if (j === FB_OP && feedback !== 0) {
         const h = 0.5 * (this.fb1 + this.fb2);
         pm += (feedback > 0 ? feedback * h : -feedback * h * h) * FB_SCALE * e;
       }
       const s = Math.sin(TWO_PI * (ph + pm));
-      if (j === 3) { this.fb2 = this.fb1; this.fb1 = s; }
+      if (j === FB_OP) { this.fb2 = this.fb1; this.fb1 = s; }
       this.out[j] = s * gain[j] * e;
     }
     const c = alg.carriers;

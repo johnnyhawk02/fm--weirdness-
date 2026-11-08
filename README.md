@@ -1,4 +1,4 @@
-# FM/STEP: one FM voice, four free-running operator sequencers
+# FM/STEP: one FM voice, seven free-running operator sequencers
 
 Browser prototype (plain JS, Web Audio, AudioWorklet). All DSP lives in `dsp/` as plain ES modules
 with no DOM use, ready to port to C++/JUCE.
@@ -22,6 +22,11 @@ with no DOM use, ready to port to C++/JUCE.
   clocks, jump sets, gate row and modulators, and gives the patch a new generated name. RND ALL respects the locks.
 - On phones (under 760px wide, e.g. Pixel 9a portrait) everything fits one screen with no scrolling: tabs A B C D
   (one operator each), VOICE, LFO and RND. The top bar (start, randomise, name, master saw) is always visible.
+- Seven operators, A to G, with 8 seven-operator algorithms; feedback is on G. On desktop the operator rows
+  scroll inside their area (four visible at once); on a phone each operator has its own tab.
+- Presets on a phone: the name, previous/next and SAVE sit at the top of every tab. SAVE is filled when there are
+  unsaved changes and reads SAVED when stored; a banner confirms each save and load. The PRESETS tab lists all
+  presets (tap to load) with save as new, delete (tap twice), export and import.
 - Clock per sequencer: `link` (follows the master saw x mult, with sync/reset) or `free` (default: runs on its
   own rate in Hz, unlinked from the master and from the other sequencers). A free sequencer retriggers its own
   operator's envelope on every fired step, so each one plays as its own part.

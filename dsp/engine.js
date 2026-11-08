@@ -4,7 +4,7 @@
 import { Rng, hashSeed } from './rng.js';
 import { Voice } from './voice.js';
 import { OpSequencer, mutateSteps } from './sequencer.js';
-import { MULT_PRESETS, MOD_TARGETS, noteToHz, masterRateHz } from './params.js';
+import { MULT_PRESETS, MOD_TARGETS, noteToHz, masterRateHz, NUM_OPS } from './params.js';
 
 const TWO_PI = Math.PI * 2;
 
@@ -23,39 +23,41 @@ export class Engine {
     this.tail = new Voice(sr);
     this.rngClock = new Rng(1);
     this.rngMod = new Rng(1);
-    this.rngSeq = [0, 1, 2, 3].map(() => new Rng(1));
-    this.rngMut = [0, 1, 2, 3].map(() => new Rng(1));
-    this.rngDrift = [0, 1, 2, 3].map(() => new Rng(1));
+    this.rngSeq = Array.from({ length: NUM_OPS }, () => new Rng(1));
+    this.rngMut = Array.from({ length: NUM_OPS }, () => new Rng(1));
+    this.rngDrift = Array.from({ length: NUM_OPS }, () => new Rng(1));
     this.seqs = this.rngSeq.map((r) => new OpSequencer(r));
     // per-sample voice inputs
-    this.freq = new Float64Array(4);
-    this.gain = new Float64Array(4);
-    this.attInc = new Float64Array(4);
-    this.decCoef = new Float64Array(4);
+    this.freq = new Float64Array(NUM_OPS);
+    this.gain = new Float64Array(NUM_OPS);
+    this.attInc = new Float64Array(NUM_OPS);
+    this.decCoef = new Float64Array(NUM_OPS);
     // control-rate effective values
-    this.levelEff = new Float64Array(4);
-    this.ratioEff = new Float64Array(4);
-    this.decEff = new Float64Array(4);
-    this.seqAmtEff = new Float64Array(4);
-    this.lockDecCoef = new Float64Array(4);
+    this.levelEff = new Float64Array(NUM_OPS);
+    this.ratioEff = new Float64Array(NUM_OPS);
+    this.decEff = new Float64Array(NUM_OPS);
+    this.seqAmtEff = new Float64Array(NUM_OPS);
+    this.lockDecCoef = new Float64Array(NUM_OPS);
     // slave saws
-    this.sPhase = new Float64Array(4);
-    this.sK = new Float64Array(4);
-    this.sBaseOff = new Float64Array(4);
-    this.sBasePos = new Float64Array(4);
-    this.sResetCycle = new Float64Array(4);
-    this.sValue = new Float64Array(4);
-    this.drift = new Float64Array(4);
-    this.driftTarget = new Float64Array(4);
+    this.sPhase = new Float64Array(NUM_OPS);
+    this.sK = new Float64Array(NUM_OPS);
+    this.sBaseOff = new Float64Array(NUM_OPS);
+    this.sBasePos = new Float64Array(NUM_OPS);
+    this.sResetCycle = new Float64Array(NUM_OPS);
+    this.sValue = new Float64Array(NUM_OPS);
+    this.drift = new Float64Array(NUM_OPS);
+    this.driftTarget = new Float64Array(NUM_OPS);
     // modulators
     this.modVal = new Float64Array(4);
     this.modTarget = new Float64Array(4);
     this.modTimer = new Float64Array(4);
     this.modPhase = new Float64Array(4);
-    this.effMult = new Float64Array(4);   // multiplier after LFO rate modulation
-    this.rateMod = new Float64Array(4);
-    this.effHz = new Float64Array(4);     // free clock rate after LFO modulation
-    this.dirtyOps = [false, false, false, false];
+    this.effMult = new Float64Array(NUM_OPS);   // multiplier after LFO rate modulation
+    this.rateMod = new Float64Array(NUM_OPS);
+    this.effHz = new Float64Array(NUM_OPS);     // free clock rate after LFO modulation
+    this.dirtyOps = new Array(NUM_OPS).fill(false);
+    this._z0 = new Float64Array(NUM_OPS); this._z1 = new Float64Array(NUM_OPS); this._z2 = new Float64Array(NUM_OPS);
+    this._z3 = new Float64Array(NUM_OPS); this._z4 = new Float64Array(NUM_OPS);
     this.dirtyVoice = false;
     this.onWrap = null;        // (op, sampleIndex, subSampleOffset, isReset)
     this.onMasterWrap = null;  // (cycle, sampleIndex, subSampleOffset)
@@ -68,7 +70,7 @@ export class Engine {
   setPatch(p) {
     const old = this.patch;
     if (old && this.cycle >= 0) {
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < NUM_OPS; i++) {
         const o = old.ops[i], n = p.ops[i];
         if (n.sync && n.clock !== 1 && !(o.sync && o.clock !== 1)) { // joining sync: line up at the current master position
           const pos = (this.cycle - this.sResetCycle[i]) + this.mPhase;
@@ -87,7 +89,7 @@ export class Engine {
     const seed = this.patch.seed >>> 0;
     this.rngClock.seed(hashSeed(seed, 'clock'));
     this.rngMod.seed(hashSeed(seed, 'mod'));
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < NUM_OPS; i++) {
       this.rngSeq[i].seed(hashSeed(seed, 'seq', i));
       this.rngMut[i].seed(hashSeed(seed, 'mut', i));
       this.rngDrift[i].seed(hashSeed(seed, 'drift', i));
@@ -96,7 +98,7 @@ export class Engine {
 
   reset() {
     this._seedStreams();
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < NUM_OPS; i++) {
       this.seqs[i].reset(this.patch.ops[i]);
       this.sPhase[i] = 0; this.sK[i] = 0; this.sBaseOff[i] = 0; this.sBasePos[i] = 0;
       this.sResetCycle[i] = 0; this.drift[i] = 0; this.driftTarget[i] = 0; this.sValue[i] = 0;
@@ -128,7 +130,7 @@ export class Engine {
 
     // random-walk modulators
     let mPitch = 0, mFb = 0, mAlgo = 0, mPan = 0, mClock = 0;
-    const mLevel = [0, 0, 0, 0], mRatio = [0, 0, 0, 0], mDecay = [0, 0, 0, 0], mSeq = [0, 0, 0, 0], mRate = [0, 0, 0, 0];
+    const mLevel = this._z0.fill(0), mRatio = this._z1.fill(0), mDecay = this._z2.fill(0), mSeq = this._z3.fill(0), mRate = this._z4.fill(0);
     for (let m = 0; m < 4; m++) {
       const md = p.mods[m];
       const rate = Math.max(0.005, md.rate);
@@ -177,7 +179,7 @@ export class Engine {
 
     // per-operator sequencer rate: depth 1 = +-3 octaves. Synced saws are rebased so the
     // phase stays continuous while the rate moves.
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < NUM_OPS; i++) {
       const op = p.ops[i];
       this.rateMod[i] = mRate[i];
       const em = Math.min(256, Math.max(1 / 256, op.mult * (mRate[i] !== 0 ? Math.pow(2, mRate[i] * 3) : 1)));
@@ -201,7 +203,7 @@ export class Engine {
     this.panL = Math.cos(a); this.panR = Math.sin(a);
     this.outGainTarget = clamp(v.level, 0, 1);
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < NUM_OPS; i++) {
       const op = p.ops[i];
       this.levelEff[i] = clamp(op.level + mLevel[i], 0, 1);
       this.ratioEff[i] = op.ratio * Math.pow(2, mRatio[i] * 2 + op.fine / 1200);
@@ -230,7 +232,7 @@ export class Engine {
   _trigger(offset) {
     this.tail.copyFrom(this.voice);
     let keep = 0;
-    for (let i = 0; i < 4; i++) if (this.patch.ops[i].clock === 1) keep |= 1 << i;
+    for (let i = 0; i < NUM_OPS; i++) if (this.patch.ops[i].clock === 1) keep |= 1 << i;
     this.voice.trigger(offset, keep);
     this.fadePos = 0;
     this.fadeLen = RETRIGGER_FADE;
@@ -264,7 +266,7 @@ export class Engine {
       this.dirtyVoice = true;
       // the next control tick moves algoEff (with the crossfade)
     }
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < NUM_OPS; i++) {
       const op = p.ops[i];
       // multiplier jump
       const rj = r.next(), rs = r.next();
@@ -311,7 +313,7 @@ export class Engine {
       if (masterWrapped) this._onMasterWrap(mOff);
 
       // slave saws + sequencers
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < NUM_OPS; i++) {
         const op = ops[i];
         let wrapped = false, isReset = false, off = 0;
         const free = op.clock === 1;
@@ -369,7 +371,7 @@ export class Engine {
 
       // per-operator inputs
       let fb = this.fbEff;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < NUM_OPS; i++) {
         const op = ops[i], sq = seqs[i];
         const m = sq.value(this.sPhase[i]);
         this.sValue[i] = m;
@@ -396,7 +398,7 @@ export class Engine {
       }
       const dc = this.decCoef;
       const saved0 = dc[0], saved1 = dc[1], saved2 = dc[2], saved3 = dc[3];
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < NUM_OPS; i++) {
         if ((ops[i].amp | 0) !== 0) dc[i] = 1;              // hold / LFO: no envelope decay
         else if (this.lockDecCoef[i] > 0) dc[i] = this.lockDecCoef[i];
       }
@@ -422,7 +424,7 @@ export class Engine {
   // then 4 modulator values].
   writeState(arr) {
     arr[0] = this.mPhase; arr[1] = this.cycle; arr[2] = this.algoEff;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < NUM_OPS; i++) {
       const b = 3 + i * 5;
       arr[b] = this.sPhase[i];
       arr[b + 1] = this.seqs[i].pos;
@@ -430,9 +432,9 @@ export class Engine {
       arr[b + 3] = this.patch.ops[i].clock === 1 ? this.effHz[i] : this.effMult[i];
       arr[b + 4] = this.sValue[i];
     }
-    for (let m = 0; m < 4; m++) arr[23 + m] = this.modVal[m];
+    for (let m = 0; m < 4; m++) arr[3 + NUM_OPS * 5 + m] = this.modVal[m];
     return arr;
   }
 }
-export const STATE_SIZE = 27;
+export const STATE_SIZE = 3 + NUM_OPS * 5 + 4;
 export { MOD_TARGETS };

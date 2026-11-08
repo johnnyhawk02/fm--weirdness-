@@ -26,7 +26,7 @@ for (const [w, h] of [[1440, 900], [1280, 800]]) {
   await page.close();
 }
 // phone: Pixel 9a portrait, 412 x 915 css px screen; Chrome shows about 412 x 780 of it
-for (const tab of ['A', 'voice', 'lfo', 'rnd']) {
+for (const tab of ['A', 'G', 'voice', 'lfo', 'rnd', 'presets']) {
   const page = await browser.newPage({ viewport: { width: 412, height: 780 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true });
   page.on('pageerror', (e) => errors.push(`phone: ${e.message}`));
   await page.goto('http://localhost:8123/?fresh');
