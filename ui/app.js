@@ -30,6 +30,7 @@ function upgrade(p) {
   if (p.voice.stereo == null) { p.voice.stereo = 0; p.voice.width = 0.8; p.voice.rotate = 0.15; }
   if (p.voice.slewScale == null) p.voice.slewScale = 1;
   if (p.voice.comp == null) p.voice.comp = 0.6;
+  if (p.voice.smooth == null) { p.voice.smooth = 0.25; p.voice.cutoff = 20000; p.voice.reso = 0.1; }
   for (const op of p.ops || []) if (op.slew == null) op.slew = p.voice.pitchSlew ?? 0.4;
   delete p.voice.pitchSlew;
   if (!Array.isArray(p.voice.paths)) p.voice.paths = [{ from: 0, to: 6, amt: 0 }, { from: 2, to: 1, amt: 0 }];
@@ -739,6 +740,10 @@ for (let k = 0; k < 2; k++) {
 }
 const mc = el('div', 'fbpath', mainRow);
 knob(ctx, mc, { path: 'voice.comp', label: 'comp' });
+const mf = el('div', 'fbpath', mainRow);
+knob(ctx, mf, { path: 'voice.smooth', label: 'smooth' }).title = 'de-click: softer attacks, gain and pitch glides, longer retrigger crossfades';
+knob(ctx, mf, { path: 'voice.cutoff', label: 'cutoff', fmt: (v) => (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0)) });
+knob(ctx, mf, { path: 'voice.reso', label: 'reso' });
 const ma = el('div', 'fbpath', mainRow);
 el('div', 'lbl', ma, 'alg');
 button(ma, '◂', () => { ctx.beginEdit(); patch.voice.algorithm = (patch.voice.algorithm + 31) % 32; changed(true); });

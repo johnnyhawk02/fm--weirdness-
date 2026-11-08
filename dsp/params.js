@@ -60,7 +60,7 @@ export const DESTS = ['level', 'ratio', 'pitch'];
 export const FILL_STYLES = ['uniform', 'drunk', 'sparse', 'cluster', 'euclid'];
 export const LOCK_KEYS = ['ratio', 'decay', 'feedback', 'shape'];
 export const MOD_TARGETS = [
-  'off', 'pitch', 'feedback', 'fb1', 'fb2', 'algorithm', 'pan', 'width', 'clock',
+  'off', 'pitch', 'cutoff', 'feedback', 'fb1', 'fb2', 'algorithm', 'pan', 'width', 'clock',
   ...['pan', 'rate', 'level', 'ratio', 'decay', 'seqAmount', 'fb'].flatMap((k) => ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((o) => `${o}.${k}`)),
 ];
 
@@ -111,6 +111,7 @@ export function defaultPatch() {
       pitchMode: 'note', note: 45, hz: 110,
       pitchEnvSemis: 7, pitchEnvDecay: 0.02,
       level: 0.8, pan: 0, algorithm: 1, feedback: 0.2,
+      smooth: 0.25, cutoff: 20000, reso: 0.1, // de-click amount, output low-pass
       comp: 0.6, // output leveller / compressor amount (a soft limiter is always on)
       slewScale: 1, // multiplies every operator's pitch slew time
       stereo: 0, width: 0.8, rotate: 0.15, // carrier placement: mode, width 0..1, rotate speed (Hz)
@@ -194,6 +195,9 @@ export const PARAM_SPECS = [
   { path: 'voice.pitchEnvSemis', section: 'voice', type: 'lin', min: -24, max: 24, def: 0 },
   { path: 'voice.pitchEnvDecay', section: 'voice', type: 'log', min: 0.005, max: 2, def: 0.05 },
   { path: 'voice.level', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.7, nornd: true },
+  { path: 'voice.smooth', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.25, nornd: true },
+  { path: 'voice.cutoff', section: 'voice', type: 'log', min: 30, max: 20000, def: 20000, rndMin: 300 },
+  { path: 'voice.reso', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.1, rndMax: 0.6 },
   { path: 'voice.comp', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.6, nornd: true },
   { path: 'voice.pan', section: 'voice', type: 'lin', min: -1, max: 1, def: 0, rndScale: 0.5 },
   { path: 'voice.algorithm', section: 'voice', type: 'choice', n: 32, def: 0 },

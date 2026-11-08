@@ -206,10 +206,10 @@ export function rndAll(patch, locks, amount, rng) {
 }
 
 // ---------- morph ----------
-const LOG_KEYS = new Set(['slew', 'slewScale', 'ratio', 'attack', 'decay', 'fixedHz', 'hz', 'pitchEnvDecay', 'rate', 'mult']);
+const LOG_KEYS = new Set(['cutoff', 'slew', 'slewScale', 'ratio', 'attack', 'decay', 'fixedHz', 'hz', 'pitchEnvDecay', 'rate', 'mult']);
 const LIN_KEYS = new Set(['fine', 'level', 'seqAmount', 'destRange', 'drift', 'jitter', 'scatter', 'jumpChance',
   'depth', 'prob', 'ratchetProb', 'skip', 'repeat', 'pitchEnvSemis', 'pan', 'feedback', 'bpm', 'smooth',
-  'algoChance', 'amount', 'lockDensity', 'fb', 'amt', 'width']);
+  'algoChance', 'amount', 'lockDensity', 'fb', 'amt', 'width', 'reso', 'smooth', 'comp']);
 const ROUND_KEYS = new Set(['note']);
 
 export function morphPatches(a, b, x) {
@@ -248,6 +248,7 @@ export function randomizeEverything(patch, rng) {
   patch.rnd.lockDensity = round4(rng.range(0, 0.4));
   for (const op of patch.ops) op.slew = randomSlew(rng);
   patch.voice.slewScale = 1;
+  if (rng.next() < 0.5) patch.voice.cutoff = 20000; // half the time the filter is wide open
   // feedback: a few operators feed back on themselves, and each cross path is on about 60% of the time
   for (let i = 0; i < NUM_OPS - 1; i++) if (rng.next() < 0.65) patch.ops[i].fb = 0;
   for (const q of patch.voice.paths) if (rng.next() < 0.4) q.amt = 0; else if (q.from === q.to) q.to = (q.to + 1 + rng.int(NUM_OPS - 1)) % NUM_OPS;

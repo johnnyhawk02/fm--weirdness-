@@ -2,6 +2,7 @@
 // modulators and the FM voice. Everything runs per sample; nothing depends on timers or the DOM.
 // Deterministic: the same patch + seed renders bit-identical audio regardless of block size.
 import { Dynamics } from './dynamics.js';
+import { LowPass } from './filter.js';
 import { Rng, hashSeed } from './rng.js';
 import { Voice } from './voice.js';
 import { OpSequencer, mutateSteps } from './sequencer.js';
@@ -68,7 +69,11 @@ export class Engine {
     this.effHz = new Float64Array(NUM_OPS);     // free clock rate after LFO modulation
     this.dirtyOps = new Array(NUM_OPS).fill(false);
     this.dyn = new Dynamics(sr);
-    this.gainSm = new Float64Array(NUM_OPS); this.gainK = 1 - Math.exp(-1 / (0.0012 * sr)); // de-click: ~1 ms smoothing on operator gain
+    this.lp = new LowPass(sr); this.cutSm = 20000;
+    // SMOOTH: de-click smoothing on operator gain and pitch, set at control rate from voice.smooth
+    this.gainSm = new Float64Array(NUM_OPS); this.gainK = 1 - Math.exp(-1 / (0.0012 * sr));
+    this.freqSm = new Float64Array(NUM_OPS); this.freqK = 1;
+    this.retrigFade = RETRIGGER_FADE; this.algoFade = ALGO_FADE_SEC; this.attFloor = 0;
     this.fbOp = new Float64Array(NUM_OPS); this.fbWork = new Float64Array(NUM_OPS); this.paths = new Float64Array(6); this._z6 = new Float64Array(NUM_OPS);
     this._z0 = new Float64Array(NUM_OPS); this._z1 = new Float64Array(NUM_OPS); this._z2 = new Float64Array(NUM_OPS);
     this._z3 = new Float64Array(NUM_OPS); this._z4 = new Float64Array(NUM_OPS); this._z5 = new Float64Array(NUM_OPS);
@@ -112,7 +117,7 @@ export class Engine {
 
   reset() {
     this._seedStreams();
-    this.dyn.reset();
+    this.dyn.reset(); this.lp.reset(); this.cutSm = this.patch.voice.cutoff ?? 20000; this.freqSm.fill(0); this.gainSm.fill(0);
     for (let i = 0; i < NUM_OPS; i++) {
       this.seqs[i].reset(this.patch.ops[i]);
       this.sPhase[i] = 0; this.sK[i] = 0; this.sBaseOff[i] = 0; this.sBasePos[i] = 0;
@@ -145,7 +150,7 @@ export class Engine {
     const dt = CTRL / sr;
 
     // random-walk modulators
-    let mPitch = 0, mFb = 0, mP1 = 0, mP2 = 0, mAlgo = 0, mPan = 0, mClock = 0, mWidth = 0;
+    let mCut = 0, mPitch = 0, mFb = 0, mP1 = 0, mP2 = 0, mAlgo = 0, mPan = 0, mClock = 0, mWidth = 0;
     const mFbOp = this._z6.fill(0), mPanOp = this._z5.fill(0), mLevel = this._z0.fill(0), mRatio = this._z1.fill(0), mDecay = this._z2.fill(0), mSeq = this._z3.fill(0), mRate = this._z4.fill(0);
     for (let m = 0; m < 4; m++) {
       const md = p.mods[m];
@@ -177,6 +182,7 @@ export class Engine {
       const t = md.target;
       if (t === 'pitch') mPitch += x;
       else if (t === 'feedback') mFb += x;
+      else if (t === 'cutoff') mCut += x;
       else if (t === 'fb1') mP1 += x;
       else if (t === 'fb2') mP2 += x;
       else if (t === 'algorithm') mAlgo += x;
@@ -240,6 +246,17 @@ export class Engine {
     this._stereo(clamp((v.width ?? 0.8) + mWidth, 0, 1), dt);
     this.outGainTarget = clamp(v.level, 0, 1);
     if ((v.comp ?? 0.6) !== this.dyn.amount) this.dyn.setAmount(v.comp ?? 0.6);
+    // SMOOTH 0..1: longer gain / pitch glides, softer attacks and longer retrigger crossfades
+    const sm = clamp(v.smooth ?? 0.25, 0, 1);
+    this.gainK = 1 - Math.exp(-1 / ((0.001 + 0.03 * sm) * sr));
+    this.freqK = sm <= 0 ? 1 : 1 - Math.exp(-1 / (0.025 * sm * sr));
+    this.attFloor = 0.02 * sm;
+    this.retrigFade = Math.round(RETRIGGER_FADE + 0.03 * sm * sr);
+    this.algoFade = ALGO_FADE_SEC + 0.06 * sm;
+    // low-pass filter: LFO depth 1 = +-4 octaves; cutoff glides at control rate
+    const cut = clamp((v.cutoff ?? 20000) * Math.pow(2, mCut * 4), 30, 20000);
+    this.cutSm += (cut - this.cutSm) * 0.3;
+    this.lp.set(this.cutSm, v.reso ?? 0);
 
     for (let i = 0; i < NUM_OPS; i++) {
       const op = p.ops[i];
@@ -253,7 +270,7 @@ export class Engine {
       this.fixedSm[i] = ks >= 1 || !(this.fixedSm[i] > 0) ? tf : this.fixedSm[i] * Math.pow(tf / this.fixedSm[i], ks);
       this.decEff[i] = op.decay * Math.pow(2, mDecay[i] * 3);
       this.decCoef[i] = decayCoef(this.decEff[i], sr);
-      this.attInc[i] = 1 / (Math.max(0.0002, op.attack) * sr);
+      this.attInc[i] = 1 / (Math.max(0.0002, op.attack, this.attFloor) * sr);
       this.seqAmtEff[i] = clamp(op.seqAmount + mSeq[i], 0, 1);
       // drift: slow random walk on free-running slave rate
       if (op.drift > 0 && (op.clock === 1 || !op.sync)) {
@@ -292,7 +309,7 @@ export class Engine {
     this.voice.algorithm = algo;
     this.algoEff = algo;
     this.fadePos = 0;
-    this.fadeLen = Math.max(1, Math.round(ALGO_FADE_SEC * this.sr));
+    this.fadeLen = Math.max(1, Math.round(this.algoFade * this.sr));
   }
 
   _trigger(offset) {
@@ -301,7 +318,7 @@ export class Engine {
     for (let i = 0; i < NUM_OPS; i++) if (this.patch.ops[i].clock === 1) keep |= 1 << i;
     this.voice.trigger(offset, keep);
     this.fadePos = 0;
-    this.fadeLen = RETRIGGER_FADE;
+    this.fadeLen = this.retrigFade;
     if (this.onTrigger) this.onTrigger(this.sample);
   }
 
@@ -460,7 +477,8 @@ export class Engine {
           const ratio = sq.lockRatio != null ? sq.lockRatio : this.ratioSm[i];
           base = this.voiceHz * ratio * fmul;
         }
-        this.freq[i] = base;
+        const fs = this.freqSm[i];
+        this.freq[i] = this.freqSm[i] = fs > 0 && this.freqK < 1 ? fs + (base - fs) * this.freqK : base;
         if (sq.lockFeedback != null) fb[i] = sq.lockFeedback;
       }
       const dc = this.dcWork;
@@ -483,7 +501,9 @@ export class Engine {
 
       this.outGain += (this.outGainTarget - this.outGain) * 0.002;
       const dyn = this.dyn;
-      dyn.process(l * this.panL, r * this.panR);
+      const lp = this.lp;
+      lp.process(l * this.panL, r * this.panR);
+      dyn.process(lp.l, lp.r);
       outL[s] = dyn.l * this.outGain;
       outR[s] = dyn.r * this.outGain;
       this.sample++;
