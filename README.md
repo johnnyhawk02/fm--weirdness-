@@ -24,6 +24,7 @@ with no DOM use, ready to port to C++/JUCE.
   (one operator each), VOICE, LFO and RND. The top bar (start, randomise, name, master saw) is always visible.
 - MAIN page (opens by default; MAIN button or M key on desktop, MAIN tab on the phone): long-throw pitch faders, and under each one that operator's level, self-feedback and its own pitch slew (slew × scales them all), two cross-feedback paths (any operator into any other, carriers included, with amount) and the algorithm.
 - Feedback: every operator has self-feedback (fb knob; G's is the old global feedback). LFO targets fb1, fb2 and A.fb..G.fb. RANDOMISE sets a few ops' feedback and the paths.
+- Output: a leveller, compressor and soft limiter (dsp/dynamics.js), set by COMP; the limiter is always on, so nothing hard-clips. Operator gain is smoothed over about 1 ms to stop step edges clicking.
 - ALTER (or the A key) nudges every continuous setting a tiny amount (levels, decays, pans, LFOs, rates, step depths and chances, a few cents of fine tune) and leaves the algorithm, ratios and patterns alone. Undo works.
 - Seven operators, A to G, with 32 seven-operator algorithms (◂ ▸ or ALL to pick); feedback is on G.
 - Stereo: every carrier is a left/right pair. Each operator's pan sets which side of the pair it modulates

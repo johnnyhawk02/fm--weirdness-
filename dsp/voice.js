@@ -3,6 +3,15 @@ import { ALGORITHMS, NUM_OPS } from './params.js';
 
 
 const TWO_PI = Math.PI * 2;
+// sine lookup with linear interpolation (phase in cycles); much cheaper than Math.sin per operator
+const TBL = 4096;
+const SIN = new Float64Array(TBL + 1);
+for (let i = 0; i <= TBL; i++) SIN[i] = Math.sin(TWO_PI * i / TBL);
+function sin1(x) {
+  x -= Math.floor(x);
+  const f = x * TBL, i = f | 0;
+  return SIN[i] + (SIN[i + 1] - SIN[i]) * (f - i);
+}
 const MOD_INDEX = 0.6;   // phase deviation (cycles) of a modulator at level 1 (~3.8 rad)
 const FB_SCALE = 0.3;    // self-feedback deviation (cycles) at |feedback| = 1
 const PATH_SCALE = 0.5;  // cross-feedback path deviation (cycles) per unit of source output at amount 1
@@ -105,12 +114,12 @@ export class Voice {
       if (fbv !== 0) { pm += fbv; pmL += fbv; pmR += fbv; }
       const amp = gain[j] * e;
       if (carrier) {
-        const sL = Math.sin(TWO_PI * (ph + pmL)), sR = pmL === pmR ? sL : Math.sin(TWO_PI * (ph + pmR));
+        const sL = sin1(ph + pmL), sR = pmL === pmR ? sL : sin1(ph + pmR);
         this.fb2[j] = this.fb1[j]; this.fb1[j] = 0.5 * (sL + sR);
         this.outL[j] = sL * amp; this.outR[j] = sR * amp;
         this.out[j] = 0.5 * (sL + sR) * amp;
       } else {
-        const s = Math.sin(TWO_PI * (ph + pm));
+        const s = sin1(ph + pm);
         this.fb2[j] = this.fb1[j]; this.fb1[j] = s;
         this.out[j] = s * amp;
       }

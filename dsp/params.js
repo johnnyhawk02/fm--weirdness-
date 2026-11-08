@@ -111,6 +111,7 @@ export function defaultPatch() {
       pitchMode: 'note', note: 45, hz: 110,
       pitchEnvSemis: 7, pitchEnvDecay: 0.02,
       level: 0.8, pan: 0, algorithm: 1, feedback: 0.2,
+      comp: 0.6, // output leveller / compressor amount (a soft limiter is always on)
       slewScale: 1, // multiplies every operator's pitch slew time
       stereo: 0, width: 0.8, rotate: 0.15, // carrier placement: mode, width 0..1, rotate speed (Hz)
       // cross-feedback paths: any operator's output bends any other's phase (G self-feedback is voice.feedback)
@@ -193,6 +194,7 @@ export const PARAM_SPECS = [
   { path: 'voice.pitchEnvSemis', section: 'voice', type: 'lin', min: -24, max: 24, def: 0 },
   { path: 'voice.pitchEnvDecay', section: 'voice', type: 'log', min: 0.005, max: 2, def: 0.05 },
   { path: 'voice.level', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.7, nornd: true },
+  { path: 'voice.comp', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.6, nornd: true },
   { path: 'voice.pan', section: 'voice', type: 'lin', min: -1, max: 1, def: 0, rndScale: 0.5 },
   { path: 'voice.algorithm', section: 'voice', type: 'choice', n: 32, def: 0 },
   { path: 'voice.stereo', section: 'voice', type: 'choice', n: 6, def: 0, rndWeights: [3, 3, 2, 2, 3, 0.3] },

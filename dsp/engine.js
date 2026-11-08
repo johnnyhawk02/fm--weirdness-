@@ -1,6 +1,7 @@
 // The complete instrument: master saw, four slave saws, four step sequencers, random-walk
 // modulators and the FM voice. Everything runs per sample; nothing depends on timers or the DOM.
 // Deterministic: the same patch + seed renders bit-identical audio regardless of block size.
+import { Dynamics } from './dynamics.js';
 import { Rng, hashSeed } from './rng.js';
 import { Voice } from './voice.js';
 import { OpSequencer, mutateSteps } from './sequencer.js';
@@ -66,6 +67,8 @@ export class Engine {
     this.rateMod = new Float64Array(NUM_OPS);
     this.effHz = new Float64Array(NUM_OPS);     // free clock rate after LFO modulation
     this.dirtyOps = new Array(NUM_OPS).fill(false);
+    this.dyn = new Dynamics(sr);
+    this.gainSm = new Float64Array(NUM_OPS); this.gainK = 1 - Math.exp(-1 / (0.0012 * sr)); // de-click: ~1 ms smoothing on operator gain
     this.fbOp = new Float64Array(NUM_OPS); this.fbWork = new Float64Array(NUM_OPS); this.paths = new Float64Array(6); this._z6 = new Float64Array(NUM_OPS);
     this._z0 = new Float64Array(NUM_OPS); this._z1 = new Float64Array(NUM_OPS); this._z2 = new Float64Array(NUM_OPS);
     this._z3 = new Float64Array(NUM_OPS); this._z4 = new Float64Array(NUM_OPS); this._z5 = new Float64Array(NUM_OPS);
@@ -109,6 +112,7 @@ export class Engine {
 
   reset() {
     this._seedStreams();
+    this.dyn.reset();
     for (let i = 0; i < NUM_OPS; i++) {
       this.seqs[i].reset(this.patch.ops[i]);
       this.sPhase[i] = 0; this.sK[i] = 0; this.sBaseOff[i] = 0; this.sBasePos[i] = 0;
@@ -235,6 +239,7 @@ export class Engine {
     }
     this._stereo(clamp((v.width ?? 0.8) + mWidth, 0, 1), dt);
     this.outGainTarget = clamp(v.level, 0, 1);
+    if ((v.comp ?? 0.6) !== this.dyn.amount) this.dyn.setAmount(v.comp ?? 0.6);
 
     for (let i = 0; i < NUM_OPS; i++) {
       const op = p.ops[i];
@@ -447,7 +452,8 @@ export class Engine {
         }
         const amp = op.amp | 0;
         if (amp >= 2) gain *= 0.5 * (1 + this.modVal[amp - 2]); // level follows an LFO
-        this.gain[i] = gain;
+        this.gainSm[i] += (gain - this.gainSm[i]) * this.gainK; // step edges (fall, gate, swell) no longer click
+        this.gain[i] = this.gainSm[i];
         let base;
         if (op.ratioMode === 'fixed') base = this.fixedSm[i] * (op.dest === 2 ? fmul : 1);
         else {
@@ -476,8 +482,10 @@ export class Engine {
       }
 
       this.outGain += (this.outGainTarget - this.outGain) * 0.002;
-      outL[s] = l * this.outGain * this.panL;
-      outR[s] = r * this.outGain * this.panR;
+      const dyn = this.dyn;
+      dyn.process(l * this.panL, r * this.panR);
+      outL[s] = dyn.l * this.outGain;
+      outR[s] = dyn.r * this.outGain;
       this.sample++;
     }
   }

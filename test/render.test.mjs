@@ -192,3 +192,17 @@ test('feedback paths: every route at full amount stays finite and under 0 dBFS, 
     }
   }
 });
+
+test('output dynamics: limiter never passes the ceiling, leveller lifts quiet input', async () => {
+  const { Dynamics } = await import('../dsp/dynamics.js');
+  for (const amt of [0, 0.6, 1]) {
+    const d = new Dynamics(SR); d.setAmount(amt);
+    let peak = 0;
+    for (let i = 0; i < SR; i++) { const x = 8 * Math.sin(i * 0.05); d.process(x, -x); peak = Math.max(peak, Math.abs(d.l), Math.abs(d.r)); }
+    assert.ok(peak <= 0.95 + 1e-9, `amount ${amt}: peak ${peak}`);
+  }
+  const d = new Dynamics(SR); d.setAmount(1);
+  let out = 0;
+  for (let i = 0; i < SR * 6; i++) { const x = 0.02 * Math.sin(i * 0.05); d.process(x, x); if (i > SR * 5) out = Math.max(out, Math.abs(d.l)); }
+  assert.ok(out > 0.1, `quiet input is brought up: ${out}`);
+});

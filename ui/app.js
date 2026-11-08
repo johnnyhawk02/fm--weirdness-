@@ -29,6 +29,7 @@ function upgrade(p) {
   }
   if (p.voice.stereo == null) { p.voice.stereo = 0; p.voice.width = 0.8; p.voice.rotate = 0.15; }
   if (p.voice.slewScale == null) p.voice.slewScale = 1;
+  if (p.voice.comp == null) p.voice.comp = 0.6;
   for (const op of p.ops || []) if (op.slew == null) op.slew = p.voice.pitchSlew ?? 0.4;
   delete p.voice.pitchSlew;
   if (!Array.isArray(p.voice.paths)) p.voice.paths = [{ from: 0, to: 6, amt: 0 }, { from: 2, to: 1, amt: 0 }];
@@ -115,7 +116,7 @@ const uictx = {
 let ac = null, node = null;
 async function ensureAudio() {
   if (node) return;
-  ac = new AudioContext({ latencyHint: 'interactive' });
+  ac = new AudioContext({ latencyHint: 'playback' });
   await ac.audioWorklet.addModule(new URL('../worklet/processor.js', import.meta.url));
   node = new AudioWorkletNode(ac, 'fm-seq', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
   node.connect(ac.destination);
@@ -258,6 +259,7 @@ const stc = el('div', 'col', outG);
 selector(ctx, stc, { path: 'voice.stereo', labels: STEREO_MODES, label: 'stereo', width: 46 });
 knob(ctx, outG, { path: 'voice.width', label: 'width' });
 knob(ctx, outG, { path: 'voice.rotate', label: 'rotate', fmt: (v) => v.toFixed(2) });
+knob(ctx, outG, { path: 'voice.comp', label: 'comp' }).title = 'leveller + compressor amount; a soft limiter is always on';
 knob(ctx, outG, { path: 'voice.level', label: 'level' });
 knob(ctx, outG, { path: 'voice.pan', label: 'pan' });
 
@@ -735,6 +737,8 @@ for (let k = 0; k < 2; k++) {
   selector(ctx, pg, { path: `voice.paths.${k}.to`, labels: OP_NAMES, width: 22 });
   knob(ctx, pg, { path: `voice.paths.${k}.amt`, label: 'amt' });
 }
+const mc = el('div', 'fbpath', mainRow);
+knob(ctx, mc, { path: 'voice.comp', label: 'comp' });
 const ma = el('div', 'fbpath', mainRow);
 el('div', 'lbl', ma, 'alg');
 button(ma, '◂', () => { ctx.beginEdit(); patch.voice.algorithm = (patch.voice.algorithm + 31) % 32; changed(true); });
