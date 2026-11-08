@@ -18,7 +18,9 @@ with no DOM use, ready to port to C++/JUCE.
 - `ui/`: LCD interface
 
 ## Presets and randomiser
-- RANDOMISE (top bar, or the R key) rolls everything not locked and gives the patch a new generated name.
+- RANDOMISE (top bar, or the R key) randomises everything, ignoring section locks: voice, operators, steps, locks,
+  clocks, jump sets, gate row and modulators, and gives the patch a new generated name. RND ALL respects the locks.
+- On phones (under 760px wide, e.g. Pixel 9a) the panel stacks into one scrolling column.
 - Preset names are spliced from small chunks of words: ancient Greece, Chinese food, mountains,
   English village names and astronomy (`ui/names.js`).
 - The name field in the top bar is editable; ctrl-s or SAVE stores the preset (same name overwrites).

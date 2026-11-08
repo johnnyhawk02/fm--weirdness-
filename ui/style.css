@@ -57,8 +57,8 @@ input.num:focus { border-color: var(--spot); }
   background: var(--bg); color: var(--ink); font: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; padding: 0; outline: none; }
 .pname:focus { border-bottom-color: var(--spot); }
 .pname.dirty { font-style: italic; }
-#bigrnd { width: 76px; height: 44px; white-space: pre; line-height: 18px; padding-top: 3px; font-size: 11px; font-weight: 700;
-  letter-spacing: 0.1em; background: var(--ink); color: var(--bg); }
+#bigrnd { width: 82px; height: 44px; line-height: 42px; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; background: var(--ink); color: var(--bg); }
 #bigrnd:active { background: var(--spot); border-color: var(--spot); }
 .brand small { display: block; font-weight: 400; font-size: 8px; letter-spacing: 0.08em; color: var(--mid); margin-top: 3px; }
 canvas { display: block; }
@@ -105,4 +105,38 @@ canvas { display: block; }
 
 @media (max-width: 1360px) {
   .op { grid-template-columns: 50px 128px minmax(260px, 1fr) 128px 244px; gap: 6px; }
+}
+
+/* ---------- phone (Pixel 9a is 412 css px wide): stack everything, scroll vertically ---------- */
+@media (max-width: 760px) {
+  html, body { overflow-x: hidden; overflow-y: auto; height: auto; }
+  #app { height: auto; padding: 6px 6px 0; }
+  #hint { display: none; }
+  .sep { display: none; }
+  #top { flex-wrap: wrap; height: auto; gap: 6px 10px; padding: 6px; }
+  #top .brand { flex: 1 1 100%; display: flex; align-items: center; gap: 8px; }
+  .pname { margin-top: 0; flex: 1; width: auto; font-size: 13px; }
+  #start, #bigrnd { flex: 1 1 40%; height: 48px; line-height: 46px; }
+  #bigrnd { white-space: normal; }
+  .algos { flex-wrap: wrap; }
+  .algo { width: 40px; }
+  #ops { gap: 6px; }
+  .op { display: flex; flex-wrap: wrap; gap: 6px 8px; padding: 6px; }
+  .op .head { flex-direction: row; flex-wrap: wrap; align-items: center; flex: 1 1 100%; gap: 6px; }
+  .op .letter { margin-right: 4px; }
+  .op .knobgrid { grid-template-columns: repeat(6, 38px); gap: 2px 18px; flex: 1 1 100%; }
+  .stripwrap { flex: 1 1 100%; order: 3; }
+  .strip { min-height: 110px; height: 110px; flex: none; }
+  .striptools { flex-wrap: wrap; overflow: visible; }
+  .striptools .sel-box, .striptools .btn, .sel-box, .btn, .tog { height: 24px; line-height: 22px; min-width: 28px; }
+  .op > .seqk { order: 4; }
+  .op > .clockc { order: 5; flex: 1 1 100%; }
+  .op > .clockc > .row { flex-wrap: wrap; }
+  .saw { width: 120px; }
+  #bottom { flex-direction: column; height: auto; padding-bottom: 12px; }
+  .mods { flex-wrap: wrap; gap: 8px 14px; }
+  .mod { flex: 1 1 45%; }
+  #bottom .row { flex-wrap: wrap; }
+  .slot { width: 30px; height: 26px; line-height: 24px; }
+  .gate { width: 18px; height: 18px; }
 }

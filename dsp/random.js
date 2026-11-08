@@ -1,5 +1,5 @@
 // Randomisers. Pure functions over the patch, driven by a seeded Rng so results are recallable.
-import { PARAM_SPECS, SPEC_BY_PATH, getPath, setPath, makeStep, MAX_STEPS, LOCK_KEYS, MULT_PRESETS, FILL_STYLES } from './params.js';
+import { PARAM_SPECS, SPEC_BY_PATH, getPath, setPath, makeStep, MAX_STEPS, LOCK_KEYS, MULT_PRESETS, FILL_STYLES, MOD_TARGETS as MOD_TARGETS_LOCAL } from './params.js';
 import { SHAPES } from './shapes.js';
 
 const NICE_RATIOS = [0.5, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 6, 7, 8, 1.5, 2.5, 3.5, 9, 11, 13];
@@ -232,4 +232,40 @@ function morphNode(a, b, x, key) {
     if (ROUND_KEYS.has(key)) return Math.round(a + (b - a) * x);
   }
   return x < 0.5 ? a : b;
+}
+
+// Randomise every part of the patch, ignoring section locks: voice, operators, steps (style, probability,
+// ratchets, locks), clocks, jump sets, gate row and random-walk modulators. Output level is left alone.
+export function randomizeEverything(patch, rng) {
+  rndAll(patch, {}, 1, rng);
+  patch.rnd.style = rng.int(FILL_STYLES.length);
+  patch.rnd.lockDensity = round4(rng.range(0, 0.4));
+  patch.voice.pitchEnvSemis = round4(rng.next() < 0.5 ? rng.range(-24, 24) : rng.range(-4, 4));
+  for (let i = 0; i < 4; i++) {
+    const op = patch.ops[i];
+    op.ratioMode = rng.next() < 0.12 ? 'fixed' : 'ratio';
+    op.fixedHz = round4(Math.exp(rng.range(Math.log(40), Math.log(4000))));
+    fillSteps(op, rng.int(FILL_STYLES.length), rng, 1);
+    rndLocks(op, patch.rnd.lockDensity, rng);
+    const set = [];
+    const n = 2 + rng.int(3);
+    while (set.length < n) { const k = rng.int(MULT_PRESETS.length); if (set.indexOf(k) < 0) set.push(k); }
+    op.jumpSet = set.sort((a, b) => a - b);
+  }
+  // keep at least one carrier clearly audible
+  const alg = patch.voice.algorithm;
+  const carriers = [[0], [0], [0, 2], [0], [0, 1, 2], [0], [0, 1, 2], [0, 1, 2, 3]][alg];
+  for (const c of carriers) patch.ops[c].level = Math.max(patch.ops[c].level, 0.45);
+  patch.ops[carriers[0]].seqAmount = Math.max(0.5, patch.ops[carriers[0]].seqAmount);
+  const targets = MOD_TARGETS_LOCAL;
+  for (const m of patch.mods) {
+    m.on = rng.next() < 0.7;
+    m.target = targets[1 + rng.int(targets.length - 1)];
+    m.depth = round4(rng.bipolar() * (m.target === 'pitch' ? 0.15 : 0.6));
+  }
+  patch.clock.mode = 'bpm';
+  patch.clock.gateOn = rng.next() < 0.3;
+  patch.clock.gateLen = 4 + rng.int(13);
+  patch.clock.gate = patch.clock.gate.map((_, k) => k === 0 || rng.next() < 0.4);
+  patch.rnd.algoChance = round4(rng.next() < 0.5 ? 0 : rng.range(0, 0.3));
 }

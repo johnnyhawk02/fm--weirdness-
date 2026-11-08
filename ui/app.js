@@ -5,7 +5,7 @@ import {
 } from '../dsp/params.js';
 import { SHAPES, shapeValue } from '../dsp/shapes.js';
 import { Rng, hashSeed } from '../dsp/rng.js';
-import { randomizePath, randomizeSection, fillSteps, rndLocks, rndAll, morphPatches, randomLockValue } from '../dsp/random.js';
+import { randomizePath, randomizeSection, fillSteps, rndLocks, rndAll, morphPatches, randomLockValue, randomizeEverything } from '../dsp/random.js';
 import { presetName } from './names.js';
 import { el, knob, selector, toggle, button, hiCanvas, toNorm, fromNorm } from './widgets.js';
 
@@ -151,7 +151,7 @@ ctx.register(() => {
 });
 const startBtn = button(top, 'START', startStop, 'space');
 startBtn.id = 'start';
-const bigRnd = button(top, 'RANDOM-\nISE', () => rndEverything(true), 'roll everything not locked, with a new name (R)');
+const bigRnd = button(top, 'RANDOMISE', () => randomiseAll(), 'randomise everything, ignoring locks, with a new name (R)');
 bigRnd.id = 'bigrnd';
 ctx.register(() => { startBtn.textContent = ui.running ? 'STOP' : 'START'; startBtn.classList.toggle('spot', ui.running); });
 el('div', 'sep', top);
@@ -241,7 +241,7 @@ function buildOp(i) {
   });
 
   // FM knobs
-  const kg = el('div', 'knobgrid', row);
+  const kg = el('div', 'knobgrid fmk', row);
   knob(ctx, kg, { path: () => (patch.ops[i].ratioMode === 'fixed' ? o + 'fixedHz' : o + 'ratio'),
     label: () => (patch.ops[i].ratioMode === 'fixed' ? 'hz' : 'ratio'),
     fmt: (v) => (patch.ops[i].ratioMode === 'fixed' ? v.toFixed(0) : v.toFixed(2)) });
@@ -269,7 +269,7 @@ function buildOp(i) {
   stripEvents(strip, i);
 
   // seq column
-  const sc = el('div', 'knobgrid', row);
+  const sc = el('div', 'knobgrid seqk', row);
   const dsel = el('div', 'col', sc);
   selector(ctx, dsel, { path: o + 'dest', labels: DESTS, label: 'dest', width: 38 });
   knob(ctx, sc, { path: o + 'destRange', label: 'range', fmt: (v) => (patch.ops[i].dest === 0 ? '-' : (v * 2).toFixed(1) + 'oc') });
@@ -280,7 +280,7 @@ function buildOp(i) {
   knob(ctx, sc, { path: o + 'syncEvery', label: 'reset', fmt: (v) => v + ' cy' });
 
   // clock column
-  const cc = el('div', 'col', row);
+  const cc = el('div', 'col clockc', row);
   const r1 = el('div', 'row', cc); r1.style.alignItems = 'flex-end';
   const mcol = el('div', 'col', r1);
   el('div', 'lbl', mcol, 'mult');
@@ -473,6 +473,14 @@ function rndSteps(i) {
   pushUndo();
   fillSteps(patch.ops[i], patch.rnd.style, uiRng(), patch.rnd.amount < 0.05 ? 0 : Math.max(patch.rnd.amount, 0.999 * (patch.rnd.amount >= 0.5)));
   changed(true);
+}
+function randomiseAll() {
+  pushUndo();
+  if (!ui.seedLocked) patch.seed = (Math.random() * 4294967296) >>> 0;
+  ui.presetName = presetName(new Rng(hashSeed(patch.seed, 'name'))); ui.presetIdx = -1;
+  randomizeEverything(patch, new Rng(hashSeed(patch.seed, 'everything')));
+  changed(true);
+  ui.presetDirty = true;
 }
 function rndEverything(rename) {
   pushUndo();
@@ -807,7 +815,7 @@ function frame() {
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   if (e.code === 'Space') { e.preventDefault(); startStop(); }
-  else if (e.key === 'r' && !e.ctrlKey && !e.metaKey) rndEverything(true);
+  else if (e.key === 'r' && !e.ctrlKey && !e.metaKey) randomiseAll();
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); savePreset(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }

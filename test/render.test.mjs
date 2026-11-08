@@ -5,7 +5,7 @@ import { mkdirSync } from 'node:fs';
 import { Engine } from '../dsp/engine.js';
 import { defaultPatch, clonePatch, masterRateHz } from '../dsp/params.js';
 import { Rng } from '../dsp/rng.js';
-import { rndAll, rndLocks } from '../dsp/random.js';
+import { rndAll, rndLocks, randomizeEverything } from '../dsp/random.js';
 import { renderPatch, barSeconds } from '../tools/render.mjs';
 import { writeWavFloat } from '../tools/wav.mjs';
 
@@ -95,5 +95,15 @@ test('with mutate on, the pattern after 16 master cycles differs from cycle 1 bu
     const changed = a.filter((s, k) => JSON.stringify(s) !== JSON.stringify(b[k])).length;
     console.log(`# op ${'ABCD'[i]}: ${changed}/${len} steps changed after 16 cycles, palette [${[...palette]}]`);
     assert.ok(b[0].depth !== 0 || a[0].depth === 0, 'step 1 stays on');
+  }
+});
+
+test('randomise-everything patches stay finite, under 0 dBFS and audible', () => {
+  for (let seed = 1; seed <= 12; seed++) {
+    const p = defaultPatch();
+    p.seed = seed * 7919;
+    randomizeEverything(p, new Rng(seed));
+    const { L, R } = renderPatch(p, 4 * barSeconds(p), SR);
+    check(L, R, `everything seed ${seed}`);
   }
 });

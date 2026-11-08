@@ -25,6 +25,20 @@ for (const [w, h] of [[1440, 900], [1280, 800]]) {
   await page.screenshot({ path: `out/screenshot-${w}x${h}.png` });
   await page.close();
 }
+// phone: Pixel 9a (412 x 915 css px)
+{
+  const page = await browser.newPage({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true });
+  page.on('pageerror', (e) => errors.push(`phone: ${e.message}`));
+  await page.goto('http://localhost:8123/?fresh');
+  await page.tap('#start');
+  await page.waitForTimeout(2000);
+  const info = await page.evaluate(() => ({ running: window.fmseq.ui.running, scrollW: document.documentElement.scrollWidth, scrollH: document.documentElement.scrollHeight }));
+  console.log('pixel9a', JSON.stringify(info));
+  if (info.scrollW > 412) errors.push(`phone: horizontal overflow ${info.scrollW}px`);
+  await page.screenshot({ path: 'out/screenshot-pixel9a.png' });
+  await page.screenshot({ path: 'out/screenshot-pixel9a-full.png', fullPage: true });
+  await page.close();
+}
 await browser.close();
 srv.close();
 if (errors.length) { console.log('errors:\n' + errors.join('\n')); process.exitCode = 1; }
