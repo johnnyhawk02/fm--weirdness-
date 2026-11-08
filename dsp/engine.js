@@ -4,7 +4,7 @@
 import { Rng, hashSeed } from './rng.js';
 import { Voice } from './voice.js';
 import { OpSequencer, mutateSteps } from './sequencer.js';
-import { MULT_PRESETS, MOD_TARGETS, noteToHz, masterRateHz, NUM_OPS } from './params.js';
+import { MULT_PRESETS, MOD_TARGETS, noteToHz, masterRateHz, NUM_OPS, ALGORITHMS } from './params.js';
 
 const TWO_PI = Math.PI * 2;
 
@@ -35,7 +35,15 @@ export class Engine {
     // control-rate effective values
     this.levelEff = new Float64Array(NUM_OPS);
     this.ratioEff = new Float64Array(NUM_OPS);
-    this.ratioSm = new Float64Array(NUM_OPS);   // slewed ratio (pitch faders glide)
+    this.ratioSm = new Float64Array(NUM_OPS);
+    this.cPanL = new Float64Array(NUM_OPS).fill(Math.SQRT1_2); // per-operator carrier placement
+    this.cPanR = new Float64Array(NUM_OPS).fill(Math.SQRT1_2);
+    this.cPos = new Float64Array(NUM_OPS);
+    this.dcWork = new Float64Array(NUM_OPS);
+    this.balL = new Float64Array(NUM_OPS).fill(1); // per-operator modulation balance into carrier pairs
+    this.balR = new Float64Array(NUM_OPS).fill(1);
+    this.opPan = new Float64Array(NUM_OPS);
+    this.rotPhase = 0;   // slewed ratio (pitch faders glide)
     this.fixedSm = new Float64Array(NUM_OPS);   // slewed fixed frequency
     this.decEff = new Float64Array(NUM_OPS);
     this.seqAmtEff = new Float64Array(NUM_OPS);
@@ -59,7 +67,7 @@ export class Engine {
     this.effHz = new Float64Array(NUM_OPS);     // free clock rate after LFO modulation
     this.dirtyOps = new Array(NUM_OPS).fill(false);
     this._z0 = new Float64Array(NUM_OPS); this._z1 = new Float64Array(NUM_OPS); this._z2 = new Float64Array(NUM_OPS);
-    this._z3 = new Float64Array(NUM_OPS); this._z4 = new Float64Array(NUM_OPS);
+    this._z3 = new Float64Array(NUM_OPS); this._z4 = new Float64Array(NUM_OPS); this._z5 = new Float64Array(NUM_OPS);
     this.dirtyVoice = false;
     this.onWrap = null;        // (op, sampleIndex, subSampleOffset, isReset)
     this.onMasterWrap = null;  // (cycle, sampleIndex, subSampleOffset)
@@ -132,8 +140,8 @@ export class Engine {
     const dt = CTRL / sr;
 
     // random-walk modulators
-    let mPitch = 0, mFb = 0, mAlgo = 0, mPan = 0, mClock = 0;
-    const mLevel = this._z0.fill(0), mRatio = this._z1.fill(0), mDecay = this._z2.fill(0), mSeq = this._z3.fill(0), mRate = this._z4.fill(0);
+    let mPitch = 0, mFb = 0, mAlgo = 0, mPan = 0, mClock = 0, mWidth = 0;
+    const mPanOp = this._z5.fill(0), mLevel = this._z0.fill(0), mRatio = this._z1.fill(0), mDecay = this._z2.fill(0), mSeq = this._z3.fill(0), mRate = this._z4.fill(0);
     for (let m = 0; m < 4; m++) {
       const md = p.mods[m];
       const rate = Math.max(0.005, md.rate);
@@ -167,6 +175,7 @@ export class Engine {
       else if (t === 'algorithm') mAlgo += x;
       else if (t === 'pan') mPan += x;
       else if (t === 'clock') mClock += x;
+      else if (t === 'width') mWidth += x;
       else {
         const oi = t.charCodeAt(0) - 65, key = t.slice(2);
         if (key === 'level') mLevel[oi] += x;
@@ -174,6 +183,7 @@ export class Engine {
         else if (key === 'decay') mDecay[oi] += x;
         else if (key === 'seqAmount') mSeq[oi] += x;
         else if (key === 'rate') mRate[oi] += x;
+        else if (key === 'pan') mPanOp[oi] += x;
       }
     }
 
@@ -199,11 +209,19 @@ export class Engine {
     this.fbEff = clamp(v.feedback + mFb, -1, 1);
     this.pitchSemis = v.pitchEnvSemis;
     this.pitchCoef = Math.exp(-1 / (Math.max(0.001, v.pitchEnvDecay) * sr));
-    const algo = (((v.algorithm + Math.round(mAlgo * 4)) % 8) + 8) % 8;
+    const NA = ALGORITHMS.length;
+    const algo = ((((v.algorithm | 0) + Math.round(mAlgo * 8)) % NA) + NA) % NA;
     if (algo !== this.algoEff) this._switchAlgorithm(algo);
+    // master balance (keeps the stereo image, never boosts)
     const pan = clamp(v.pan + mPan, -1, 1);
-    const a = (pan + 1) * Math.PI / 4;
-    this.panL = Math.cos(a); this.panR = Math.sin(a);
+    this.panL = pan > 0 ? 1 - pan : 1; this.panR = pan < 0 ? 1 + pan : 1;
+    for (let i = 0; i < NUM_OPS; i++) {
+      const op = p.ops[i];
+      const pp = clamp((op.pan || 0) + mPanOp[i], -1, 1);
+      this.opPan[i] = pp;
+      this.balL[i] = pp > 0 ? 1 - pp : 1; this.balR[i] = pp < 0 ? 1 + pp : 1;
+    }
+    this._stereo(clamp((v.width ?? 0.8) + mWidth, 0, 1), dt);
     this.outGainTarget = clamp(v.level, 0, 1);
 
     for (let i = 0; i < NUM_OPS; i++) {
@@ -227,6 +245,28 @@ export class Engine {
       } else {
         this.drift[i] = 0;
       }
+    }
+  }
+
+  // Place each carrier of the current algorithm in the stereo field.
+  _stereo(width, dt) {
+    const v = this.patch.voice, mode = v.stereo | 0;
+    this.rotPhase += (v.rotate || 0) * dt;
+    this.rotPhase -= Math.floor(this.rotPhase);
+    const c = ALGORITHMS[this.algoEff].carriers, n = c.length;
+    this.cPos.fill(0);
+    for (let k = 0; k < n; k++) {
+      let p = 0;
+      if (mode === 0) p = n > 1 ? -1 + 2 * k / (n - 1) : 0;                 // spread evenly
+      else if (mode === 1) p = n > 1 ? (k % 2 ? 1 : -1) : 0;                // alternate hard L / R
+      else if (mode === 2) p = n > 1 ? (k % 2 ? 1 : -1) * (1 - Math.floor(k / 2) / Math.ceil(n / 2)) : 0; // mirrored pairs
+      else if (mode === 3) p = ((hashSeed(this.patch.seed, this.algoEff, k) & 0xffff) / 32767.5) - 1; // fixed random places
+      else if (mode === 4) p = Math.sin(2 * Math.PI * (this.rotPhase + k / Math.max(1, n)));        // rotate around
+      this.cPos[c[k]] = clamp(p * width + this.opPan[c[k]], -1, 1); // mode placement + the carrier's own pan
+    }
+    for (let j = 0; j < NUM_OPS; j++) {
+      const a = (this.cPos[j] + 1) * Math.PI / 4;
+      this.cPanL[j] = Math.cos(a); this.cPanR[j] = Math.sin(a);
     }
   }
 
@@ -269,7 +309,7 @@ export class Engine {
     const ac = p.rnd.algoChance;
     const ra = r.next(), rb = r.next();
     if (ac > 0 && ra < ac) {
-      let n = Math.floor(rb * 7);
+      let n = Math.floor(rb * (ALGORITHMS.length - 1));
       if (n >= p.voice.algorithm) n++;
       p.voice.algorithm = n;
       this.dirtyVoice = true;
@@ -405,26 +445,27 @@ export class Engine {
         this.freq[i] = base;
         if (sq.lockFeedback != null) fb = sq.lockFeedback;
       }
-      const dc = this.decCoef;
-      const saved0 = dc[0], saved1 = dc[1], saved2 = dc[2], saved3 = dc[3];
+      const dc = this.dcWork;
       for (let i = 0; i < NUM_OPS; i++) {
         if ((ops[i].amp | 0) !== 0) dc[i] = 1;              // hold / LFO: no envelope decay
         else if (this.lockDecCoef[i] > 0) dc[i] = this.lockDecCoef[i];
+        else dc[i] = this.decCoef[i];
       }
 
-      let out = this.voice.render(this.freq, this.gain, this.attInc, dc, fb, this.pitchSemis, this.pitchCoef);
+      const vc = this.voice;
+      vc.render(this.freq, this.gain, this.attInc, dc, fb, this.pitchSemis, this.pitchCoef, this.cPanL, this.cPanR, this.balL, this.balR);
+      let l = vc.l, r = vc.r;
       if (this.fadePos < this.fadeLen) {
         const x = this.fadePos / this.fadeLen;
-        const t = this.tail.render(this.freq, this.gain, this.attInc, dc, fb, this.pitchSemis, this.pitchCoef);
-        out = out * x + t * (1 - x);
+        const t = this.tail;
+        t.render(this.freq, this.gain, this.attInc, dc, fb, this.pitchSemis, this.pitchCoef, this.cPanL, this.cPanR, this.balL, this.balR);
+        l = l * x + t.l * (1 - x); r = r * x + t.r * (1 - x);
         this.fadePos++;
       }
-      dc[0] = saved0; dc[1] = saved1; dc[2] = saved2; dc[3] = saved3;
 
       this.outGain += (this.outGainTarget - this.outGain) * 0.002;
-      out *= this.outGain;
-      outL[s] = out * this.panL;
-      outR[s] = out * this.panR;
+      outL[s] = l * this.outGain * this.panL;
+      outR[s] = r * this.outGain * this.panR;
       this.sample++;
     }
   }

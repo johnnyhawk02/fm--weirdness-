@@ -10,7 +10,8 @@ export const MAX_STEPS = 16;
 function alg(name, edges, carriers) {
   const mods = Array.from({ length: NUM_OPS }, () => []);
   for (const e of edges) { const [src, dst] = e.split('>').map((c) => c.charCodeAt(0) - 65); mods[dst].push(src); }
-  return { name, mods, carriers };
+  const isCarrier = Array.from({ length: NUM_OPS }, (_, j) => carriers.includes(j));
+  return { name, mods, carriers, isCarrier };
 }
 export const ALGORITHMS = [
   alg('G>F>E>D>C>B>A', ['B>A', 'C>B', 'D>C', 'E>D', 'F>E', 'G>F'], [0]),
@@ -21,7 +22,33 @@ export const ALGORITHMS = [
   alg('G>F>A,B,C  E>D', ['F>A', 'F>B', 'F>C', 'G>F', 'E>D'], [0, 1, 2, 3]),
   alg('B>A  D>C  F>E  G', ['B>A', 'D>C', 'F>E'], [0, 2, 4, 6]),
   alg('A B C D E F G', [], [0, 1, 2, 3, 4, 5, 6]),
+  alg('C>B>A  F>E>D  G', ['B>A', 'C>B', 'E>D', 'F>E'], [0, 3, 6]),
+  alg('G>F>E>D>C  B,C>A', ['B>A', 'C>A', 'D>C', 'E>D', 'F>E', 'G>F'], [0]),
+  alg('diamond', ['G>F', 'G>E', 'F>D', 'E>D', 'D>C', 'C>B', 'B>A'], [0]),
+  alg('G>F>E>A,B,C,D', ['G>F', 'F>E', 'E>D', 'E>C', 'E>B', 'E>A'], [0, 1, 2, 3]),
+  alg('B..G>A', ['B>A', 'C>A', 'D>A', 'E>A', 'F>A', 'G>A'], [0]),
+  alg('G,F>B,C>A', ['G>B', 'G>C', 'F>B', 'F>C', 'B>A', 'C>A'], [0]),
+  alg('C>B>A  E>D  G>F', ['B>A', 'C>B', 'E>D', 'G>F'], [0, 3, 5]),
+  alg('G>F>E>D  C>B  A', ['G>F', 'F>E', 'E>D', 'C>B'], [0, 1, 3]),
+  alg('G>A F>B E>C  D', ['G>A', 'F>B', 'E>C'], [0, 1, 2, 3]),
+  alg('G>F,E,D  C>B>A', ['G>F', 'G>E', 'G>D', 'C>B', 'B>A'], [0, 3, 4, 5]),
+  alg('D>A,B,C  G>E,F', ['D>C', 'D>B', 'D>A', 'G>F', 'G>E'], [0, 1, 2, 4, 5]),
+  alg('G>F>E>D  B,C>A', ['G>F', 'F>E', 'E>D', 'C>A', 'B>A'], [0, 3]),
+  alg('tree', ['F>E', 'G>E', 'E>D', 'D>A', 'C>A', 'B>A'], [0]),
+  alg('G>A,B,C,D  E F', ['G>A', 'G>B', 'G>C', 'G>D'], [0, 1, 2, 3, 4, 5]),
+  alg('E>D>C>B>A  F G', ['B>A', 'C>B', 'D>C', 'E>D'], [0, 5, 6]),
+  alg('A  C>B  E>D  G>F', ['G>F', 'E>D', 'C>B'], [0, 1, 3, 5]),
+  alg('B,F,G>A  D,E>C', ['F>A', 'G>A', 'B>A', 'D>C', 'E>C'], [0, 2]),
+  alg('G>F>A,B,C,D,E', ['G>F', 'F>E', 'F>D', 'F>C', 'F>B', 'F>A'], [0, 1, 2, 3, 4]),
+  alg('F,G>E>A  D>A  C>B', ['G>E', 'F>E', 'E>A', 'D>A', 'C>B'], [0, 1]),
+  alg('lattice', ['B>A', 'C>A', 'D>B', 'E>C', 'F>D', 'G>E'], [0]),
+  alg('F,G>A  C,D,E>B', ['G>A', 'F>A', 'E>B', 'D>B', 'C>B'], [0, 1]),
+  alg('F,G>C  D,E>B  >A', ['G>C', 'F>C', 'E>B', 'D>B', 'C>A', 'B>A'], [0]),
+  alg('G>F,D,B  F>E D>C B>A', ['G>F', 'G>D', 'G>B', 'F>E', 'D>C', 'B>A'], [0, 2, 4]),
+  alg('C>B>A  F>E>D  G', ['C>B', 'B>A', 'F>E', 'E>D'], [0, 3, 6]),
 ];
+export const STEREO_MODES = ['spread', 'alt', 'mirror', 'random', 'rotate', 'mono'];
+
 
 export const MULT_PRESETS = [1 / 16, 1 / 8, 1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 4, 1, 4 / 3, 3 / 2, 2, 3, 4, 6, 8, 12, 16, 32, 64];
 export const MULT_LABELS = ['1/16', '1/8', '1/4', '1/3', '1/2', '2/3', '3/4', '1', '4/3', '3/2', '2', '3', '4', '6', '8', '12', '16', '32', '64'];
@@ -33,8 +60,8 @@ export const DESTS = ['level', 'ratio', 'pitch'];
 export const FILL_STYLES = ['uniform', 'drunk', 'sparse', 'cluster', 'euclid'];
 export const LOCK_KEYS = ['ratio', 'decay', 'feedback', 'shape'];
 export const MOD_TARGETS = [
-  'off', 'pitch', 'feedback', 'algorithm', 'pan', 'clock',
-  ...['rate', 'level', 'ratio', 'decay', 'seqAmount'].flatMap((k) => ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((o) => `${o}.${k}`)),
+  'off', 'pitch', 'feedback', 'algorithm', 'pan', 'width', 'clock',
+  ...['pan', 'rate', 'level', 'ratio', 'decay', 'seqAmount'].flatMap((k) => ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((o) => `${o}.${k}`)),
 ];
 
 export function multLabel(m) {
@@ -65,6 +92,7 @@ function makeOp(i) {
     ratioMode: 'ratio', ratio: ratios[i], fine: 0, fixedHz: 440,
     level: levels[i], attack: 0.002,
     decay: [3, 0.8, 2.5, 2, 3, 0.6, 1.2][i],
+    pan: [0, -0.8, 0.8, 0, 0, -0.5, 0.6][i], // modulators: which side of the carrier pair they modulate; carriers: placement
     amp: i === 0 || i === 4 ? 1 : 0, // amp source: 0 note envelope, 1 hold (steady), 2-5 LFO 1-4
     // sequencer
     length: [8, 16, 12, 6, 10, 7, 5][i], steps, seqAmount: i === 0 || i === 4 ? 0.3 : 1, dest: 0, destRange: 0.5,
@@ -84,6 +112,7 @@ export function defaultPatch() {
       pitchEnvSemis: 7, pitchEnvDecay: 0.02,
       level: 0.8, pan: 0, algorithm: 1, feedback: 0.2,
       pitchSlew: 0.4, // seconds: operator pitch glide time
+      stereo: 0, width: 0.8, rotate: 0.15, // carrier placement: mode, width 0..1, rotate speed (Hz)
     },
     clock: {
       mode: 'bpm', bpm: 120, beats: 1, hz: 0.5,
@@ -133,6 +162,7 @@ for (let i = 0; i < NUM_OPS; i++) {
     { path: o + 'attack', section: 'voice', type: 'log', min: 0.0005, max: 1, def: 0.002, rndMax: 0.15 },
     { path: o + 'decay', section: 'voice', type: 'log', min: 0.01, max: 8, def: 0.5 },
     { path: o + 'fixedHz', section: 'voice', type: 'log', min: 20, max: 8000, def: 440 },
+    { path: o + 'pan', section: 'voice', type: 'lin', min: -1, max: 1, def: 0 },
     { path: o + 'amp', section: 'voice', type: 'choice', n: 6, def: 0, rndWeights: [6, 2, 1, 1, 1, 1] },
     { path: o + 'seqAmount', section: 'seq', type: 'lin', min: 0, max: 1, def: 1 },
     { path: o + 'dest', section: 'seq', type: 'choice', n: 3, def: 0, rndWeights: [6, 2, 2] },
@@ -160,7 +190,10 @@ export const PARAM_SPECS = [
   { path: 'voice.pitchEnvDecay', section: 'voice', type: 'log', min: 0.005, max: 2, def: 0.05 },
   { path: 'voice.level', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.7, nornd: true },
   { path: 'voice.pan', section: 'voice', type: 'lin', min: -1, max: 1, def: 0, rndScale: 0.5 },
-  { path: 'voice.algorithm', section: 'voice', type: 'choice', n: 8, def: 0 },
+  { path: 'voice.algorithm', section: 'voice', type: 'choice', n: 32, def: 0 },
+  { path: 'voice.stereo', section: 'voice', type: 'choice', n: 6, def: 0, rndWeights: [3, 3, 2, 2, 3, 0.3] },
+  { path: 'voice.width', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.8, rndMin: 0.3 },
+  { path: 'voice.rotate', section: 'voice', type: 'log', min: 0.01, max: 8, def: 0.15, rndMax: 2 },
   { path: 'voice.pitchSlew', section: 'voice', type: 'log', min: 0.001, max: 8, def: 0.4, rndMax: 2 },
   { path: 'voice.feedback', section: 'voice', type: 'lin', min: -1, max: 1, def: 0 },
   { path: 'clock.bpm', section: 'clocks', type: 'int', min: 10, max: 999, def: 120, rndMin: 70, rndMax: 180 },

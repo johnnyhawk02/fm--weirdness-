@@ -1,7 +1,7 @@
 // UI shell: builds the LCD panel, keeps the patch, undo/redo, snapshots, and drives the worklet.
 import {
   defaultPatch, clonePatch, getPath, setPath, SPEC_BY_PATH, ALGORITHMS, OP_NAMES, MULT_PRESETS, MULT_LABELS,
-  DIRECTIONS, DESTS, FILL_STYLES, LOCK_KEYS, MOD_TARGETS, MAX_STEPS, multLabel, masterRateHz, LFO_SHAPES, MULT_MIN, MULT_MAX, AMP_SOURCES, NUM_OPS,
+  DIRECTIONS, DESTS, FILL_STYLES, LOCK_KEYS, MOD_TARGETS, MAX_STEPS, multLabel, masterRateHz, LFO_SHAPES, MULT_MIN, MULT_MAX, AMP_SOURCES, NUM_OPS, STEREO_MODES,
 } from '../dsp/params.js';
 import { SHAPES, shapeValue } from '../dsp/shapes.js';
 import { Rng, hashSeed } from '../dsp/rng.js';
@@ -27,6 +27,9 @@ function upgrade(p) {
     const d = defaultPatch();
     for (let i = p.ops.length; i < NUM_OPS; i++) { const o = d.ops[i]; o.level = 0; p.ops.push(o); }
   }
+  if (p.voice.stereo == null) { p.voice.stereo = 0; p.voice.width = 0.8; p.voice.rotate = 0.15; }
+  if (p.voice.pitchSlew == null) p.voice.pitchSlew = 0.4;
+  for (const o of p.ops) if (o.pan == null) o.pan = 0;
   for (const o of p.ops) { if (o.amp == null) o.amp = 0; if (o.clock == null) o.clock = 0; if (o.hz == null) o.hz = 2; }
   return p;
 }
@@ -205,6 +208,29 @@ knob(ctx, voiceG, { path: 'voice.pitchEnvDecay', label: 'p.dec', fmt: (v) => (v 
 el('div', 'sep', top);
 
 const algoG = group(top, 'algorithm');
+algoG.classList.add('algorow');
+// current algorithm, with previous / next and a button that opens the full grid
+const algoCur = el('div', 'algocur', algoG);
+const algoCurBox = el('div', 'algo base', algoCur);
+const algoCurN = el('span', 'n', algoCurBox, '');
+const algoNav = el('div', 'col', algoCur); algoNav.style.gap = '2px';
+const algoName = el('div', 'val', algoNav, '');
+const algoBtns = el('div', 'row', algoNav); algoBtns.style.gap = '2px';
+const stepAlgo = (d) => { ctx.beginEdit(); const n = ALGORITHMS.length; patch.voice.algorithm = (patch.voice.algorithm + d + n) % n; changed(true); };
+button(algoBtns, '◂', () => stepAlgo(-1));
+button(algoBtns, '▸', () => stepAlgo(1));
+const allBtn = button(algoBtns, 'all', () => { algos.classList.toggle('open'); allBtn.classList.toggle('sel', algos.classList.contains('open')); }, 'show all algorithms');
+let algoCurIdx = -1;
+ctx.register(() => {
+  const k = patch.voice.algorithm;
+  if (k !== algoCurIdx) {
+    algoCurIdx = k;
+    const old = algoCurBox.querySelector('svg'); if (old) old.remove();
+    algoCurBox.appendChild(algoSvg(ALGORITHMS[k]));
+    algoCurN.textContent = String(k + 1);
+    algoName.textContent = `${k + 1}/${ALGORITHMS.length} ${ALGORITHMS[k].name}`.slice(0, 22);
+  }
+});
 const algos = el('div', 'algos', algoG);
 const algoEls = ALGORITHMS.map((a, i) => {
   const b = el('div', 'algo', algos);
@@ -214,6 +240,7 @@ const algoEls = ALGORITHMS.map((a, i) => {
   b.addEventListener('pointerdown', (e) => {
     if (e.shiftKey) { ctx.rnd('voice.algorithm'); return; }
     ctx.beginEdit(); patch.voice.algorithm = i; changed(true);
+    if (window.innerWidth > 760) { algos.classList.remove('open'); allBtn.classList.remove('sel'); }
   });
   return b;
 });
@@ -221,6 +248,10 @@ ctx.register(() => algoEls.forEach((b, i) => b.classList.toggle('base', i === pa
 el('div', 'sep', top);
 const outG = group(top, 'out');
 knob(ctx, outG, { path: 'voice.feedback', label: 'fb G' });
+const stc = el('div', 'col', outG);
+selector(ctx, stc, { path: 'voice.stereo', labels: STEREO_MODES, label: 'stereo', width: 46 });
+knob(ctx, outG, { path: 'voice.width', label: 'width' });
+knob(ctx, outG, { path: 'voice.rotate', label: 'rotate', fmt: (v) => v.toFixed(2) });
 knob(ctx, outG, { path: 'voice.level', label: 'level' });
 knob(ctx, outG, { path: 'voice.pan', label: 'pan' });
 
@@ -228,7 +259,7 @@ function algoSvg(a) {
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
   const W = 40, H = 40, N = NUM_OPS;
-  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   // level = distance from a carrier
   const lvl = new Array(N).fill(0);
   for (let pass = 0; pass < N; pass++) for (let j = 0; j < N; j++) for (let t = 0; t < N; t++) if (a.mods[t].includes(j)) lvl[j] = Math.max(lvl[j], lvl[t] + 1);
@@ -280,6 +311,8 @@ function buildOp(i) {
     fmt: (v) => (patch.ops[i].ratioMode === 'fixed' ? v.toFixed(0) : v.toFixed(2)) });
   knob(ctx, kg, { path: o + 'fine', label: 'fine', fmt: (v) => v.toFixed(0) + 'c' });
   knob(ctx, kg, { path: o + 'level', label: () => (ALGORITHMS[patch.voice.algorithm].carriers.includes(i) ? 'level' : 'index') });
+  knob(ctx, kg, { path: o + 'pan', label: 'pan', fmt: (v) => (Math.abs(v) < 0.005 ? 'C' : (v < 0 ? 'L' : 'R') + Math.round(Math.abs(v) * 100)) }).title =
+    'modulator: which side of the stereo carrier pair it bends · carrier: where it sits';
   knob(ctx, kg, { path: o + 'attack', label: 'att', fmt: ms });
   knob(ctx, kg, { path: o + 'decay', label: 'dec', fmt: ms });
   knob(ctx, kg, { path: o + 'seqAmount', label: 'seq amt' });
@@ -1027,6 +1060,7 @@ function frame() {
   }
   const liveAlgo = live ? st[2] : -1;
   algoEls.forEach((b, k) => b.classList.toggle('live', k === liveAlgo));
+  algoCurBox.classList.toggle('live', liveAlgo === patch.voice.algorithm);
   for (let m = 0; m < 4; m++) {
     const v = live ? st[3 + NUM_OPS * 6 + m] : 0;
     modBars[m].style.left = `calc(${((v + 1) / 2 * 100).toFixed(1)}% - 1px)`;

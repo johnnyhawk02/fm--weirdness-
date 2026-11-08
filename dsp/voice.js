@@ -18,10 +18,12 @@ export class Voice {
     this.fb1 = 0; this.fb2 = 0;
     this.pitchEnv = 0;                   // 1 -> 0 decaying pitch envelope
     this.algorithm = 0;
+    this.l = 0; this.r = 0;
+    this.outL = new Float64Array(NUM_OPS); this.outR = new Float64Array(NUM_OPS);
   }
 
   copyFrom(v) {
-    this.phase.set(v.phase); this.env.set(v.env); this.stage.set(v.stage); this.out.set(v.out);
+    this.phase.set(v.phase); this.outL.set(v.outL); this.outR.set(v.outR); this.env.set(v.env); this.stage.set(v.stage); this.out.set(v.out);
     this.fb1 = v.fb1; this.fb2 = v.fb2; this.pitchEnv = v.pitchEnv; this.algorithm = v.algorithm;
   }
 
@@ -43,7 +45,7 @@ export class Voice {
   // freq[4]: Hz per op before the pitch envelope. gain[4]: level * seq gain per op. attInc[4]: env increment per sample.
   // decCoef[4]: per-sample decay multiplier. feedback: -1..1.
   // pitchSemis: pitch-envelope depth. pitchCoef: pitch env decay multiplier per sample.
-  render(freq, gain, attInc, decCoef, feedback, pitchSemis, pitchCoef) {
+  render(freq, gain, attInc, decCoef, feedback, pitchSemis, pitchCoef, panL, panR, balL, balR) {
     const alg = ALGORITHMS[this.algorithm];
     const sr = this.sr;
     const pe = pitchSemis * this.pitchEnv;
@@ -69,24 +71,42 @@ export class Voice {
       ph -= Math.floor(ph);
       this.phase[j] = ph;
 
-      let pm = 0;
+      // Carriers are stereo pairs: each modulator feeds the left and right copy by its own pan,
+      // so a modulator panned left only bends the left side of the carrier.
       const srcs = alg.mods[j];
+      const carrier = alg.isCarrier[j];
+      let pm = 0, pmL = 0, pmR = 0;
       if (srcs.length) {
-        for (let k = 0; k < srcs.length; k++) pm += this.out[srcs[k]];
-        const r = f / AA_CORNER;
-        pm *= MOD_INDEX / (1 + r * r);
+        const r = f / AA_CORNER, idx = MOD_INDEX / (1 + r * r);
+        if (carrier) {
+          for (let k = 0; k < srcs.length; k++) { const q = srcs[k], o = this.out[q]; pmL += o * balL[q]; pmR += o * balR[q]; }
+          pmL *= idx; pmR *= idx;
+        } else {
+          for (let k = 0; k < srcs.length; k++) pm += this.out[srcs[k]];
+          pm *= idx;
+        }
       }
       if (j === FB_OP && feedback !== 0) {
         const h = 0.5 * (this.fb1 + this.fb2);
-        pm += (feedback > 0 ? feedback * h : -feedback * h * h) * FB_SCALE * e;
+        const fbv = (feedback > 0 ? feedback * h : -feedback * h * h) * FB_SCALE * e;
+        pm += fbv; pmL += fbv; pmR += fbv;
       }
-      const s = Math.sin(TWO_PI * (ph + pm));
-      if (j === FB_OP) { this.fb2 = this.fb1; this.fb1 = s; }
-      this.out[j] = s * gain[j] * e;
+      const amp = gain[j] * e;
+      if (carrier) {
+        const sL = Math.sin(TWO_PI * (ph + pmL)), sR = pmL === pmR ? sL : Math.sin(TWO_PI * (ph + pmR));
+        if (j === FB_OP) { this.fb2 = this.fb1; this.fb1 = 0.5 * (sL + sR); }
+        this.outL[j] = sL * amp; this.outR[j] = sR * amp;
+        this.out[j] = 0.5 * (sL + sR) * amp;
+      } else {
+        const s = Math.sin(TWO_PI * (ph + pm));
+        if (j === FB_OP) { this.fb2 = this.fb1; this.fb1 = s; }
+        this.out[j] = s * amp;
+      }
     }
-    const c = alg.carriers;
-    let sum = 0;
-    for (let k = 0; k < c.length; k++) sum += this.out[c[k]];
-    return sum / c.length;
+    // stereo: each carrier sits at its own place (equal-power gains in panL/panR)
+    const c = alg.carriers, inv = 1 / c.length;
+    let l = 0, r = 0;
+    for (let k = 0; k < c.length; k++) { const j = c[k]; l += this.outL[j] * panL[j]; r += this.outR[j] * panR[j]; }
+    this.l = l * inv; this.r = r * inv;
   }
 }

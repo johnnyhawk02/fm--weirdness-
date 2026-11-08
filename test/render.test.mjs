@@ -123,3 +123,29 @@ test('operator pitch glides with slew instead of jumping', () => {
   for (let i = 0; i < SR * 4; i += 128) e.process(L, R, 128);
   assert.ok(Math.abs(e.ratioSm[1] - 8) < 0.01, 'glide arrives at the target');
 });
+
+test('every algorithm in every stereo mode stays finite and under 0 dBFS; carrier pairs are stereo', async () => {
+  const { ALGORITHMS, STEREO_MODES } = await import('../dsp/params.js');
+  assert.ok(ALGORITHMS.length >= 32);
+  let wide = 0;
+  for (let a = 0; a < ALGORITHMS.length; a++) {
+    for (let m = 0; m < STEREO_MODES.length; m++) {
+      const p = defaultPatch();
+      p.voice.algorithm = a; p.voice.stereo = m; p.voice.width = 1; p.voice.level = 1; p.voice.feedback = 0.8;
+      for (const md of p.mods) md.on = false;
+      p.ops.forEach((o, i) => { o.level = 1; o.pan = i % 2 ? -1 : 1; });
+      const { L, R } = renderPatch(p, 0.4, SR);
+      check(L, R, `algorithm ${a + 1} stereo ${STEREO_MODES[m]}`);
+      let d = 0; for (let i = 0; i < L.length; i++) d += Math.abs(L[i] - R[i]);
+      if (d > 1) wide++;
+    }
+  }
+  assert.ok(wide > ALGORITHMS.length * 4, `only ${wide} renders had a stereo difference`);
+  // a single-carrier algorithm still goes stereo through panned modulators (stereo carrier pair)
+  const p = defaultPatch();
+  p.voice.algorithm = 0; p.voice.stereo = 5; for (const md of p.mods) md.on = false;
+  p.ops.forEach((o, i) => { o.pan = i === 0 ? 0 : (i % 2 ? -1 : 1); o.level = 0.6; o.amp = 1; o.seqAmount = 0; });
+  const { L, R } = renderPatch(p, 0.5, SR);
+  let d = 0; for (let i = 0; i < L.length; i++) d += Math.abs(L[i] - R[i]);
+  assert.ok(d > 10, `carrier pair L/R difference ${d}`);
+});

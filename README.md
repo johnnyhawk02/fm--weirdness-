@@ -22,7 +22,12 @@ with no DOM use, ready to port to C++/JUCE.
   clocks, jump sets, gate row and modulators, and gives the patch a new generated name. RND ALL respects the locks.
 - On phones (under 760px wide, e.g. Pixel 9a portrait) everything fits one screen with no scrolling: tabs A B C D
   (one operator each), VOICE, LFO and RND. The top bar (start, randomise, name, master saw) is always visible.
-- Seven operators, A to G, with 8 seven-operator algorithms; feedback is on G. On desktop the operator rows
+- Seven operators, A to G, with 32 seven-operator algorithms (◂ ▸ or ALL to pick); feedback is on G.
+- Stereo: every carrier is a left/right pair. Each operator's pan sets which side of the pair it modulates
+  (a modulator panned left bends only the left carrier), and for carriers it is their placement. On top, the
+  stereo mode places the carriers of the current algorithm: spread, alt (hard L/R), mirror (pairs), random
+  (fixed per seed and algorithm), rotate (carriers circle the field at the rotate rate) or mono, scaled by
+  width. LFOs can target width and every operator's pan (A.pan..G.pan). On desktop the operator rows
   scroll inside their area (four visible at once); on a phone each operator has its own tab.
 - Presets on a phone: the name, previous/next and SAVE sit at the top of every tab. SAVE is filled when there are
   unsaved changes and reads SAVED when stored; a banner confirms each save and load. The PRESETS tab lists all
