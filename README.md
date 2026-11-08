@@ -22,7 +22,7 @@ with no DOM use, ready to port to C++/JUCE.
   clocks, jump sets, gate row and modulators, and gives the patch a new generated name. RND ALL respects the locks.
 - On phones (under 760px wide, e.g. Pixel 9a portrait) everything fits one screen with no scrolling: tabs A B C D
   (one operator each), VOICE, LFO and RND. The top bar (start, randomise, name, master saw) is always visible.
-- MAIN page (opens by default; MAIN button or M key on desktop, MAIN tab on the phone): long-throw pitch faders with slew, level and self-feedback for every operator, two cross-feedback paths (any operator into any other, carriers included, with amount) and the algorithm.
+- MAIN page (opens by default; MAIN button or M key on desktop, MAIN tab on the phone): long-throw pitch faders, and under each one that operator's level, self-feedback and its own pitch slew (slew × scales them all), two cross-feedback paths (any operator into any other, carriers included, with amount) and the algorithm.
 - Feedback: every operator has self-feedback (fb knob; G's is the old global feedback). LFO targets fb1, fb2 and A.fb..G.fb. RANDOMISE sets a few ops' feedback and the paths.
 - ALTER (or the A key) nudges every continuous setting a tiny amount (levels, decays, pans, LFOs, rates, step depths and chances, a few cents of fine tune) and leaves the algorithm, ratios and patterns alone. Undo works.
 - Seven operators, A to G, with 32 seven-operator algorithms (◂ ▸ or ALL to pick); feedback is on G.

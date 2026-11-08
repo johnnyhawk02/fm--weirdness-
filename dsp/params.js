@@ -89,7 +89,7 @@ function makeOp(i) {
   for (let s = 0; s < MAX_STEPS; s++) steps.push(makeStep());
   return {
     // FM
-    ratioMode: 'ratio', ratio: ratios[i], fine: 0, fixedHz: 440, fb: 0, // fb: self-feedback (G uses voice.feedback)
+    ratioMode: 'ratio', ratio: ratios[i], fine: 0, fixedHz: 440, fb: 0, slew: [0.4, 0.25, 0.6, 1.2, 0.4, 0.15, 2][i], // slew: pitch glide time (s) // fb: self-feedback (G uses voice.feedback)
     level: levels[i], attack: 0.002,
     decay: [3, 0.8, 2.5, 2, 3, 0.6, 1.2][i],
     pan: [0, -0.8, 0.8, 0, 0, -0.5, 0.6][i], // modulators: which side of the carrier pair they modulate; carriers: placement
@@ -111,7 +111,7 @@ export function defaultPatch() {
       pitchMode: 'note', note: 45, hz: 110,
       pitchEnvSemis: 7, pitchEnvDecay: 0.02,
       level: 0.8, pan: 0, algorithm: 1, feedback: 0.2,
-      pitchSlew: 0.4, // seconds: operator pitch glide time
+      slewScale: 1, // multiplies every operator's pitch slew time
       stereo: 0, width: 0.8, rotate: 0.15, // carrier placement: mode, width 0..1, rotate speed (Hz)
       // cross-feedback paths: any operator's output bends any other's phase (G self-feedback is voice.feedback)
       paths: [{ from: 0, to: 6, amt: 0 }, { from: 2, to: 1, amt: 0 }],
@@ -165,6 +165,7 @@ for (let i = 0; i < NUM_OPS; i++) {
     { path: o + 'decay', section: 'voice', type: 'log', min: 0.01, max: 8, def: 0.5 },
     { path: o + 'fixedHz', section: 'voice', type: 'log', min: 20, max: 8000, def: 440 },
     { path: o + 'pan', section: 'voice', type: 'lin', min: -1, max: 1, def: 0 },
+    { path: o + 'slew', section: 'voice', type: 'log', min: 0.001, max: 8, def: 0.4, rndMax: 4 },
     ...(i < NUM_OPS - 1 ? [{ path: o + 'fb', section: 'voice', type: 'lin', min: -1, max: 1, def: 0, rndScale: 0.5 }] : []),
     { path: o + 'amp', section: 'voice', type: 'choice', n: 6, def: 0, rndWeights: [6, 2, 1, 1, 1, 1] },
     { path: o + 'seqAmount', section: 'seq', type: 'lin', min: 0, max: 1, def: 1 },
@@ -197,7 +198,7 @@ export const PARAM_SPECS = [
   { path: 'voice.stereo', section: 'voice', type: 'choice', n: 6, def: 0, rndWeights: [3, 3, 2, 2, 3, 0.3] },
   { path: 'voice.width', section: 'voice', type: 'lin', min: 0, max: 1, def: 0.8, rndMin: 0.3 },
   { path: 'voice.rotate', section: 'voice', type: 'log', min: 0.01, max: 8, def: 0.15, rndMax: 2 },
-  { path: 'voice.pitchSlew', section: 'voice', type: 'log', min: 0.001, max: 8, def: 0.4, rndMax: 2 },
+  { path: 'voice.slewScale', section: 'voice', type: 'log', min: 0.1, max: 10, def: 1, rndMin: 0.5, rndMax: 2 },
   { path: 'voice.feedback', section: 'voice', type: 'lin', min: -1, max: 1, def: 0 },
   ...[0, 1].flatMap((k) => [
     { path: `voice.paths.${k}.from`, section: 'voice', type: 'choice', n: NUM_OPS, def: 0 },

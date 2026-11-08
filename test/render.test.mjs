@@ -110,7 +110,7 @@ test('randomise-everything patches stay finite, under 0 dBFS and audible', () =>
 
 test('operator pitch glides with slew instead of jumping', () => {
   const p = defaultPatch();
-  p.voice.pitchSlew = 0.5;
+  p.ops[1].slew = 0.5; p.ops[2].slew = 0.001;
   for (const m of p.mods) m.on = false;
   const e = new Engine(SR);
   e.setPatch(p); e.reset();
@@ -122,6 +122,11 @@ test('operator pitch glides with slew instead of jumping', () => {
   assert.ok(mid > 2.5 && mid < 7.5, `halfway through the glide the ratio is ${mid}`);
   for (let i = 0; i < SR * 4; i += 128) e.process(L, R, 128);
   assert.ok(Math.abs(e.ratioSm[1] - 8) < 0.01, 'glide arrives at the target');
+  // each operator has its own slew: C (1 ms) jumps while B glides
+  const r = clonePatch(q); r.ops[1].ratio = 1; r.ops[2].ratio = 9; e.setPatch(r);
+  for (let i = 0; i < SR * 0.05; i += 128) e.process(L, R, 128);
+  assert.ok(Math.abs(e.ratioSm[2] - 9) < 0.01, `C snapped: ${e.ratioSm[2]}`);
+  assert.ok(e.ratioSm[1] > 4, `B still gliding: ${e.ratioSm[1]}`);
 });
 
 test('every algorithm in every stereo mode stays finite and under 0 dBFS; carrier pairs are stereo', async () => {

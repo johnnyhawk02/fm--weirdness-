@@ -28,7 +28,9 @@ function upgrade(p) {
     for (let i = p.ops.length; i < NUM_OPS; i++) { const o = d.ops[i]; o.level = 0; p.ops.push(o); }
   }
   if (p.voice.stereo == null) { p.voice.stereo = 0; p.voice.width = 0.8; p.voice.rotate = 0.15; }
-  if (p.voice.pitchSlew == null) p.voice.pitchSlew = 0.4;
+  if (p.voice.slewScale == null) p.voice.slewScale = 1;
+  for (const op of p.ops || []) if (op.slew == null) op.slew = p.voice.pitchSlew ?? 0.4;
+  delete p.voice.pitchSlew;
   if (!Array.isArray(p.voice.paths)) p.voice.paths = [{ from: 0, to: 6, amt: 0 }, { from: 2, to: 1, amt: 0 }];
   for (const op of p.ops || []) if (op.fb == null) op.fb = 0;
   for (const o of p.ops) if (o.pan == null) o.pan = 0;
@@ -694,7 +696,8 @@ const pitchEl = document.getElementById('pitch');
 pitchEl.classList.add('panel');
 const ph = el('div', 'row', pitchEl); ph.style.alignItems = 'flex-end'; ph.style.gap = '8px';
 el('div', 'title', ph, 'main');
-knob(ctx, ph, { path: 'voice.pitchSlew', label: 'slew', fmt: (v) => (v < 1 ? (v * 1000).toFixed(0) + 'ms' : v.toFixed(2) + 's') });
+const slewFmt = (v) => (v < 1 ? (v * 1000).toFixed(0) + 'ms' : v.toFixed(2) + 's');
+knob(ctx, ph, { path: 'voice.slewScale', label: 'slew ×', fmt: (v) => '×' + v.toFixed(2) }).title = 'scales every operator\'s slew';
 ui.pitchSnap = false;
 const snapT = el('div', 'tog off', ph, 'snap');
 snapT.title = 'snap ratios to harmonic steps';
@@ -702,14 +705,14 @@ snapT.addEventListener('pointerdown', () => { ui.pitchSnap = !ui.pitchSnap; snap
 button(ph, 'rnd', () => {
   pushUndo();
   const r = uiRng();
-  patch.voice.pitchSlew = randomSlew(r);
+  for (const op of patch.ops) op.slew = randomSlew(r);
   for (const op of patch.ops) {
     if (r.next() >= patch.rnd.amount) continue;
     if (op.ratioMode === 'fixed') op.fixedHz = Math.round(Math.exp(r.range(Math.log(40), Math.log(4000))));
     else op.ratio = ui.pitchSnap ? RATIO_STEPS[r.int(RATIO_STEPS.length)] : Math.round(Math.exp(r.range(Math.log(0.5), Math.log(16))) * 1000) / 1000;
   }
   changed(true);
-}, 'randomise operator pitches and the slew time');
+}, 'randomise operator pitches and slew times');
 const pHint = el('div', 'val', ph, 'faders: operator pitch · orange line: the gliding pitch · dbl-tap resets');
 pHint.classList.add('desk-only');
 pHint.style.color = C.mid; pHint.style.whiteSpace = 'normal';
@@ -720,6 +723,7 @@ for (let i = 0; i < NUM_OPS; i++) {
   const c = el('div', 'mainop', mainOps);
   knob(ctx, c, { path: `ops.${i}.level`, label: () => (ALGORITHMS[patch.voice.algorithm].carriers.includes(i) ? 'level' : 'index') });
   knob(ctx, c, { path: i === NUM_OPS - 1 ? 'voice.feedback' : `ops.${i}.fb`, label: 'fb' });
+  knob(ctx, c, { path: `ops.${i}.slew`, label: 'slew', fmt: slewFmt });
 }
 // cross-feedback paths and the algorithm, all on one row
 const mainRow = el('div', 'mainrow', pitchEl);

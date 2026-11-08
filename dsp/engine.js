@@ -241,7 +241,7 @@ export class Engine {
       this.levelEff[i] = clamp(op.level + mLevel[i], 0, 1);
       this.ratioEff[i] = op.ratio * Math.pow(2, mRatio[i] * 2 + op.fine / 1200);
       // pitch slew: glide in the log (musical) domain
-      const slew = v.pitchSlew || 0;
+      const slew = (op.slew ?? v.pitchSlew ?? 0.4) * (v.slewScale ?? 1);
       const ks = slew <= 0 || !(this.ratioSm[i] > 0) ? 1 : 1 - Math.exp(-dt / slew);
       const tr = this.ratioEff[i], tf = op.fixedHz;
       this.ratioSm[i] = ks >= 1 ? tr : this.ratioSm[i] * Math.pow(tr / this.ratioSm[i], ks);
